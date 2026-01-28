@@ -1,0 +1,5 @@
+node_modules/
+fb_profile/
+.env
+*.log
+.DS_Store
