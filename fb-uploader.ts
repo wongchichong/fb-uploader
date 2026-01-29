@@ -137,7 +137,19 @@ class FacebookMediaUploader {
             // }
 
             console.log(magenta`Wait for 2 minutes`)
+
+            //if Post button still there
+            const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
+            if (!postButtonRef) {
+                console.log(red`Could not find Post button, continuing...`)
+                return
+            }
+
             const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
+            if (!addPhotosRef) {
+                console.log(red`Could not find "Add photos or videos" link, continuing...`)
+                return
+            }
 
             const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
             this.executeAgentBrowser(clickAddPhotosCommand)
@@ -145,6 +157,10 @@ class FacebookMediaUploader {
         catch (error) {
             console.log(magenta`Reposting`)
             const addPhotosRef = await this.getRef("Post", { key: 'button' })
+            if (!addPhotosRef) {
+                console.log(red`Could not find Post button for reposting`)
+                throw error
+            }
             const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
             this.executeAgentBrowser(clickAddPhotosCommand)
 
@@ -177,6 +193,10 @@ class FacebookMediaUploader {
         // Get the Post button reference using getRef
         try {
             const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
+            if (!postButtonRef) {
+                console.log(red`Could not find Post button`)
+                return null
+            }
 
             // Poll for button to become enabled
             while (true) {
@@ -266,6 +286,10 @@ class FacebookMediaUploader {
         // Get the Post button reference using getRef
         try {
             const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
+            if (!postButtonRef) {
+                console.log(red`Could not find Post button`)
+                return
+            }
             const clickCommand = `agent-browser click ${postButtonRef}`
             this.executeAgentBrowser(clickCommand)
             console.log(green`Post button clicked successfully`)
@@ -375,11 +399,17 @@ class FacebookMediaUploader {
         this.executeAgentBrowser(navigateCommand)
 
         const createAlbumRef = await this.getRef("Create Album")
+        if (!createAlbumRef) {
+            throw new Error('Could not find "Create Album" button')
+        }
         console.log(blue`Create album `.bold(createAlbumRef))
         const clickCreateAlbumCommand = `agent-browser click ${createAlbumRef}`
         this.executeAgentBrowser(clickCreateAlbumCommand)
 
         const albumNameRef = await this.getRef("Album name", { key: 'textbox' })
+        if (!albumNameRef) {
+            throw new Error('Could not find "Album name" textbox')
+        }
         const fillAlbumNameCommand = `agent-browser fill ${albumNameRef} "${albumName}"`
         console.log(blue`Fill album name `.bold(fillAlbumNameCommand))
         this.executeAgentBrowser(fillAlbumNameCommand)
@@ -390,6 +420,9 @@ class FacebookMediaUploader {
         this.executeAgentBrowser(pbCommand)
 
         const addPhotosRef = await this.getRef("Add photos or videos")
+        if (!addPhotosRef) {
+            throw new Error('Could not find "Add photos or videos" link')
+        }
         const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
         this.executeAgentBrowser(clickAddPhotosCommand)
 
@@ -427,7 +460,7 @@ class FacebookMediaUploader {
         console.log(green`All batches uploaded successfully!`)
     }
 
-    private async getRef(linkText: string, options: GetRefOptions = {}) {
+    private async getRef(linkText: string, options: GetRefOptions = {}): Promise<string | null> {
         const { key = 'link', second = 10 } = options
         // Looking at the selected code, I need to implement a retry mechanism that tries 20 times with 100ms waits between attempts to find the "Add photos or videos" link.Here's the rewritten code:
 
@@ -462,7 +495,8 @@ class FacebookMediaUploader {
         // New line after all dots
         console.log()
 
-        throw new Error(`Could not find "${linkText}" ${key} after ${second} seconds`)
+        console.log(red`Could not find "${linkText}" ${key} after ${second} seconds`)
+        return null
     }
 }
 
