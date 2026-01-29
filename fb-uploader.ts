@@ -99,6 +99,19 @@ class FacebookMediaUploader {
         }
     }
 
+    async manageFailUploads() {
+        console.log(magenta`Check for fail upload...`)
+        const failedUploads = await this.findFailUpload()
+        if (failedUploads) {
+            for (const { ref, filename } of failedUploads) {
+                console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
+                // Optionally remove the failed upload using the ref
+                // await this.removeFailedUpload(ref);
+            }
+            return
+        }
+    }
+
     /**
      * Upload a batch of files
      */
@@ -119,30 +132,19 @@ class FacebookMediaUploader {
         this.executeAgentBrowser(uploadCommand)
 
         // Wait for upload to complete
-        console.log(magenta`Waiting for upload to complete...`)
+        console.log(green`Waiting for upload to complete...`)
         await this.waitForPostButton()
 
         // Click Post button to finalize batch
         await this.clickPostButton()
 
-        // console.log(magenta`Check for fail upload...`)
-        // const failedUploads = await this.findFailUpload()
-        // if (failedUploads) {
-        //     for (const { ref, filename } of failedUploads) {
-        //         console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
-        //         // Optionally remove the failed upload using the ref
-        //         // await this.removeFailedUpload(ref);
-        //     }
-        // }
-
         console.log(magenta`Wait for 2 minutes`)
 
         //if Post button still there
         const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
-        if (postButtonRef) {
-            console.log(red`Could not find Post button, continuing...`)
-            return
-        }
+        if (postButtonRef && !(await this.isEnabled(postButtonRef)))
+            await this.manageFailUploads()
+
 
         const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
         if (!addPhotosRef) {
@@ -198,7 +200,7 @@ class FacebookMediaUploader {
     }
 
     private async waitForPostButton(): Promise<string | null> {
-        console.log(magenta`Waiting for Post button to be enabled...`)
+        // console.log(magenta`Waiting for Post button to be enabled...`)
 
         // Get the Post button reference using getRef
         const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
@@ -208,9 +210,12 @@ class FacebookMediaUploader {
         }
 
         // Poll for button to become enabled
+        console.log(magenta`Waiting for Post button to be enabled... `)
+        let checkAttempt = 0
         while (true) {
             try {
                 if (await this.isEnabled(postButtonRef)) {
+                    console.log() // New line after spinner
                     console.log(green`Post button is now enabled`)
                     return postButtonRef
                 }
@@ -218,19 +223,20 @@ class FacebookMediaUploader {
                 //     console.log(yellow('Post button ', postButtonRef, 'is still not enabled. Waiting...'))
                 // }
 
+                // Add a spinning fan character for each retry attempt
+                const spinner = ['|', '/', '-', '\\']
+                process.stdout.write(spinner[checkAttempt % 4])
+                process.stdout.moveCursor(-1, 0) // Move cursor back to overwrite the previous character
+
                 // Wait a bit before checking again
                 await new Promise(resolve => setTimeout(resolve, 2000))
 
-                console.log(magenta`Check for fail upload...`)
-                const failedUploads = await this.findFailUpload()
-                if (failedUploads) {
-                    for (const { ref, filename } of failedUploads) {
-                        console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
-                        // Optionally remove the failed upload using the ref
-                        // await this.removeFailedUpload(ref);
-                    }
-                }
+                checkAttempt++
+                // if (postButtonRef && !(await this.isEnabled(postButtonRef)))
+                //     await this.manageFailUploads()
+
             } catch (error) {
+                console.log() // New line after spinner
                 console.error(red('Error checking if Post button is enabled:', error))
                 return null
             }
@@ -466,7 +472,7 @@ class FacebookMediaUploader {
         const maxAttempts = second * 5 // 10 attempts per second
 
         // Show initial waiting message
-        process.stdout.write(yellow(`Waiting "${linkText}" ${key}... `).toString())
+        process.stdout.write(yellow(`getRef Waiting "${linkText}" ${key}... `).toString())
 
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 200))
