@@ -63,7 +63,7 @@ npx tsx facebook-uploader.ts "path/to/your/media/folder" --photo-batch-size 25 -
 npx tsx facebook-uploader.ts "path/to/your/media/folder" --photo-batch-size 25 --video-batch-size 8 --session "my-session"
 
 # With all options
-npx tsx facebook-uploader.ts "path/to/your/media/folder" --photo-batch-size 25 --video-batch-size 8 --session "my-session" --base-url "https://www.facebook.com/me/photos_albums"
+npx tsx fb-uploader.ts "path/to/your/media/folder" --photo-batch-size 25 --video-batch-size 8 --session "my-session" --base-url "https://www.facebook.com/me/photos_albums" --profile-path "C:/custom/profile"
 
 # Show help
 npx tsx facebook-uploader.ts --help
@@ -72,7 +72,7 @@ npx tsx facebook-uploader.ts --help
 ### Programmatic Usage
 
 ```typescript
-import { FacebookMediaUploader } from './fb-uploader';
+import { FacebookMediaUploader, UploadOptions, GetRefOptions } from './fb-uploader';
 
 const uploader = new FacebookMediaUploader({
   folderPath: '/path/to/media/folder',
@@ -100,4 +100,4 @@ await uploader.uploadMedia('Album Name');
 - The album name will be derived from the folder name
 - Photos are uploaded in batches of 50 (configurable via --photo-batch-size)
 - Videos are uploaded in batches of 10 (configurable via --video-batch-size)
-- The script expects the album to already exist in your Facebook personal albums list
+- The script expects the album to already exist in your Facebook personal/group albums list
