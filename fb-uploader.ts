@@ -125,44 +125,43 @@ class FacebookMediaUploader {
         // Click Post button to finalize batch
         await this.clickPostButton()
 
-        try {
-            // console.log(magenta`Check for fail upload...`)
-            // const failedUploads = await this.findFailUpload()
-            // if (failedUploads) {
-            //     for (const { ref, filename } of failedUploads) {
-            //         console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
-            //         // Optionally remove the failed upload using the ref
-            //         // await this.removeFailedUpload(ref);
-            //     }
-            // }
+        // console.log(magenta`Check for fail upload...`)
+        // const failedUploads = await this.findFailUpload()
+        // if (failedUploads) {
+        //     for (const { ref, filename } of failedUploads) {
+        //         console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
+        //         // Optionally remove the failed upload using the ref
+        //         // await this.removeFailedUpload(ref);
+        //     }
+        // }
 
-            console.log(magenta`Wait for 2 minutes`)
+        console.log(magenta`Wait for 2 minutes`)
 
-            //if Post button still there
-            const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
-            if (!postButtonRef) {
-                console.log(red`Could not find Post button, continuing...`)
-                return
-            }
-
-            const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
-            if (!addPhotosRef) {
-                console.log(red`Could not find "Add photos or videos" link, continuing...`)
-                return
-            }
-
-            const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
-            this.executeAgentBrowser(clickAddPhotosCommand)
+        //if Post button still there
+        const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
+        if (!postButtonRef) {
+            console.log(red`Could not find Post button, continuing...`)
+            return
         }
-        catch (error) {
+
+        const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
+        if (!addPhotosRef) {
+            console.log(red`Could not find "Add photos or videos" link, continuing...`)
+            return
+        }
+
+        const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
+        try {
+            this.executeAgentBrowser(clickAddPhotosCommand)
+        } catch (error) {
             console.log(magenta`Reposting`)
-            const addPhotosRef = await this.getRef("Post", { key: 'button' })
-            if (!addPhotosRef) {
+            const repostRef = await this.getRef("Post", { key: 'button' })
+            if (!repostRef) {
                 console.log(red`Could not find Post button for reposting`)
                 throw error
             }
-            const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
-            this.executeAgentBrowser(clickAddPhotosCommand)
+            const repostCommand = `agent-browser click ${repostRef}`
+            this.executeAgentBrowser(repostCommand)
 
             const oops = await this.getRef("Oops!", { key: 'heading', second: 10 })
 
