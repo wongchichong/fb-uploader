@@ -213,6 +213,12 @@ class FacebookMediaUploader {
         try {
             const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
 
+            // First check if there's an upload error message
+            const errorMessageRegex = /- text: "Your file can't be uploaded:/
+            if (!errorMessageRegex.test(snapshotOutput)) {
+                return undefined
+            }
+
             // Find entries containing both .jpg files and Remove Video button refs
             const jpgRegex = /img "(.*?\.jpg)"/g
             const removeVideoRegex = /- button "Remove Video" \[ref=([e\d]+)\]/g
@@ -244,6 +250,7 @@ class FacebookMediaUploader {
             console.error(red('Error finding failed uploads:', error))
         }
     }
+
 
     /**
      * Click the Post button
