@@ -94,7 +94,7 @@ class FacebookMediaUploader {
             const result = execSync(profileCommand, { stdio: 'inherit' })
             console.log(green`Command executed successfully`)
         } catch (error) {
-            console.error(red('Command failed:', error))
+            console.error(red(error))
             throw error
         }
     }
@@ -139,7 +139,7 @@ class FacebookMediaUploader {
 
         //if Post button still there
         const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
-        if (!postButtonRef) {
+        if (postButtonRef) {
             console.log(red`Could not find Post button, continuing...`)
             return
         }
@@ -186,6 +186,17 @@ class FacebookMediaUploader {
     /**
      * Wait for Post button to become enabled
      */
+    private async isEnabled(elementRef: string): Promise<boolean> {
+        try {
+            const isEnabledCommand = `agent-browser is enabled ${elementRef}`
+            const isEnabledOutput = execSync(isEnabledCommand, { encoding: 'utf-8' }).trim()
+            return isEnabledOutput === 'true'
+        } catch (error) {
+            console.error(red('Error checking if element is enabled:', error))
+            return false
+        }
+    }
+
     private async waitForPostButton(): Promise<string | null> {
         console.log(magenta`Waiting for Post button to be enabled...`)
 
@@ -199,10 +210,7 @@ class FacebookMediaUploader {
         // Poll for button to become enabled
         while (true) {
             try {
-                const isEnabledCommand = `agent-browser is enabled ${postButtonRef}`
-                const isEnabledOutput = execSync(isEnabledCommand, { encoding: 'utf-8' }).trim()
-
-                if (isEnabledOutput === 'true') {
+                if (await this.isEnabled(postButtonRef)) {
                     console.log(green`Post button is now enabled`)
                     return postButtonRef
                 }
