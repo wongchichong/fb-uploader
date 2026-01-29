@@ -123,9 +123,19 @@ class FacebookMediaUploader {
         await this.waitForPostButton()
 
         // Click Post button to finalize batch
-        this.clickPostButton()
+        await this.clickPostButton()
 
         try {
+            // console.log(magenta`Check for fail upload...`)
+            // const failedUploads = await this.findFailUpload()
+            // if (failedUploads) {
+            //     for (const { ref, filename } of failedUploads) {
+            //         console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
+            //         // Optionally remove the failed upload using the ref
+            //         // await this.removeFailedUpload(ref);
+            //     }
+            // }
+
             console.log(magenta`Wait for 2 minutes`)
             const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
 
@@ -164,47 +174,44 @@ class FacebookMediaUploader {
     private async waitForPostButton(): Promise<string | null> {
         console.log(magenta`Waiting for Post button to be enabled...`)
 
-        // Get the Post button reference
-        const snapshotCommand = `agent-browser snapshot -i`
-        const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
-        const postButtonMatch = snapshotOutput.match(/button "Post"\s+\[ref=([e\d]+)\]/)
+        // Get the Post button reference using getRef
+        try {
+            const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
 
-        if (!postButtonMatch) {
-            console.warn(red('Could not find Post button in snapshot'))
-            return null
-        }
+            // Poll for button to become enabled
+            while (true) {
+                try {
+                    const isEnabledCommand = `agent-browser is enabled ${postButtonRef}`
+                    const isEnabledOutput = execSync(isEnabledCommand, { encoding: 'utf-8' }).trim()
 
-        const postButtonRef = postButtonMatch[1]
-
-        // Poll for button to become enabled
-        while (true) {
-            try {
-                const isEnabledCommand = `agent-browser is enabled ${postButtonRef}`
-                const isEnabledOutput = execSync(isEnabledCommand, { encoding: 'utf-8' }).trim()
-
-                if (isEnabledOutput === 'true') {
-                    console.log(green`Post button is now enabled`)
-                    return postButtonRef
-                }
-                // else {
-                //     console.log(yellow('Post button ', postButtonRef, 'is still not enabled. Waiting...'))
-                // }
-
-                // Wait a bit before checking again
-                await new Promise(resolve => setTimeout(resolve, 2000))
-
-                const failedUploads = await this.findFailUpload()
-                if (failedUploads) {
-                    for (const { ref, filename } of failedUploads) {
-                        console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
-                        // Optionally remove the failed upload using the ref
-                        // await this.removeFailedUpload(ref);
+                    if (isEnabledOutput === 'true') {
+                        console.log(green`Post button is now enabled`)
+                        return postButtonRef
                     }
+                    // else {
+                    //     console.log(yellow('Post button ', postButtonRef, 'is still not enabled. Waiting...'))
+                    // }
+
+                    // Wait a bit before checking again
+                    await new Promise(resolve => setTimeout(resolve, 2000))
+
+                    console.log(magenta`Check for fail upload...`)
+                    const failedUploads = await this.findFailUpload()
+                    if (failedUploads) {
+                        for (const { ref, filename } of failedUploads) {
+                            console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
+                            // Optionally remove the failed upload using the ref
+                            // await this.removeFailedUpload(ref);
+                        }
+                    }
+                } catch (error) {
+                    console.error(red('Error checking if Post button is enabled:', error))
+                    return null
                 }
-            } catch (error) {
-                console.error(red('Error checking if Post button is enabled:', error))
-                return null
             }
+        } catch (error) {
+            console.error(red('Could not find Post button:', error))
+            return null
         }
     }
 
@@ -255,24 +262,15 @@ class FacebookMediaUploader {
     /**
      * Click the Post button
      */
-    private clickPostButton(): void {
-        // Get current snapshot to find the Post button ref
-        const snapshotCommand = `agent-browser snapshot -i`
+    private async clickPostButton(): Promise<void> {
+        // Get the Post button reference using getRef
         try {
-            const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
-
-            // Extract the Post button reference from the snapshot
-            const postButtonMatch = snapshotOutput.match(/button "Post"\s+\[ref=([e\d]+)\]/)
-            if (postButtonMatch) {
-                const postButtonRef = postButtonMatch[1]
-                const clickCommand = `agent-browser click ${postButtonRef}`
-                this.executeAgentBrowser(clickCommand)
-                console.log(green`Post button clicked successfully`)
-            } else {
-                console.warn(red('Could not find Post button in snapshot'))
-            }
+            const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
+            const clickCommand = `agent-browser click ${postButtonRef}`
+            this.executeAgentBrowser(clickCommand)
+            console.log(green`Post button clicked successfully`)
         } catch (error) {
-            console.error(red('Error finding Post button:', error))
+            console.error(red('Could not find or click Post button:', error))
         }
     }
 
