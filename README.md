@@ -72,7 +72,7 @@ npx tsx facebook-uploader.ts --help
 ### Programmatic Usage
 
 ```typescript
-import { FacebookMediaUploader, UploadOptions, GetRefOptions } from './fb-uploader';
+import { FacebookMediaUploader, UploadOptions } from './fb-uploader';
 
 const uploader = new FacebookMediaUploader({
   folderPath: '/path/to/media/folder',

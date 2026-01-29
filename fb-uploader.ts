@@ -17,7 +17,6 @@ interface UploadOptions {
 }
 
 interface GetRefOptions {
-    linkText: string
     key?: 'link' | 'textbox' | 'dialog' | 'heading' | 'button'
     second?: number
 }
@@ -110,7 +109,7 @@ class FacebookMediaUploader {
 
         // console.log(magenta('Waiting for file input...'))
         // this.executeAgentBrowser('agent-browser wait "input[multiple]"')
-        await this.getRef({ linkText: 'Upload photos or videos', key: 'button', second: 10 })
+        await this.getRef('Upload photos or videos', { key: 'button', second: 10 })
         //wait another 10s 
         console.log(magenta`Waiting 10s for next batch...`)
         await new Promise(resolve => setTimeout(resolve, 10000))
@@ -128,18 +127,18 @@ class FacebookMediaUploader {
 
         try {
             console.log(magenta`Wait for 2 minutes`)
-            const addPhotosRef = await this.getRef({ linkText: "Add photos or videos", key: 'link', second: 120 })
+            const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
 
             const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
             this.executeAgentBrowser(clickAddPhotosCommand)
         }
         catch (error) {
             console.log(magenta`Reposting`)
-            const addPhotosRef = await this.getRef({ linkText: "Post", key: 'button' })
+            const addPhotosRef = await this.getRef("Post", { key: 'button' })
             const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
             this.executeAgentBrowser(clickAddPhotosCommand)
 
-            const oops = await this.getRef({ linkText: "Oops!", key: 'heading', second: 10 })
+            const oops = await this.getRef("Oops!", { key: 'heading', second: 10 })
 
             if (oops) {
                 console.log(magenta`Refresh Oops`)
@@ -324,12 +323,12 @@ class FacebookMediaUploader {
         const navigateCommand = `agent-browser open "${this.baseUrl}"`
         this.executeAgentBrowser(navigateCommand)
 
-        const createAlbumRef = await this.getRef({ linkText: "Create Album" })
+        const createAlbumRef = await this.getRef("Create Album")
         console.log(blue`Create album `.bold(createAlbumRef))
         const clickCreateAlbumCommand = `agent-browser click ${createAlbumRef}`
         this.executeAgentBrowser(clickCreateAlbumCommand)
 
-        const albumNameRef = await this.getRef({ linkText: "Album name", key: 'textbox' })
+        const albumNameRef = await this.getRef("Album name", { key: 'textbox' })
         const fillAlbumNameCommand = `agent-browser fill ${albumNameRef} "${albumName}"`
         console.log(blue`Fill album name `.bold(fillAlbumNameCommand))
         this.executeAgentBrowser(fillAlbumNameCommand)
@@ -339,13 +338,13 @@ class FacebookMediaUploader {
         console.log(blue`Click Post button `.bold(pbCommand))
         this.executeAgentBrowser(pbCommand)
 
-        const addPhotosRef = await this.getRef({ linkText: "Add photos or videos" })
+        const addPhotosRef = await this.getRef("Add photos or videos")
         const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
         this.executeAgentBrowser(clickAddPhotosCommand)
 
         console.log(blue`Waiting for Creating album...`)
         // await new Promise(resolve => setTimeout(resolve, 10000))
-        await this.getRef({ linkText: "Add photos or videos", key: 'link', second: 10 })
+        await this.getRef("Add photos or videos", { key: 'link', second: 10 })
 
 
         // Process photo batches first
@@ -377,8 +376,8 @@ class FacebookMediaUploader {
         console.log(green`All batches uploaded successfully!`)
     }
 
-    private async getRef(options: GetRefOptions) {
-        const { linkText, key = 'link', second = 10 } = options;
+    private async getRef(linkText: string, options: GetRefOptions = {}) {
+        const { key = 'link', second = 10 } = options;
         // Looking at the selected code, I need to implement a retry mechanism that tries 20 times with 100ms waits between attempts to find the "Add photos or videos" link.Here's the rewritten code:
 
         // Try for the specified number of seconds with 100ms wait between attempts
