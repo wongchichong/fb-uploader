@@ -192,10 +192,56 @@ class FacebookMediaUploader {
 
                 // Wait a bit before checking again
                 await new Promise(resolve => setTimeout(resolve, 2000))
+
+                const failedUploads = await this.findFailUpload()
+                if (failedUploads) {
+                    for (const { ref, filename } of failedUploads) {
+                        console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
+                        // Optionally remove the failed upload using the ref
+                        // await this.removeFailedUpload(ref);
+                    }
+                }
             } catch (error) {
                 console.error(red('Error checking if Post button is enabled:', error))
                 return null
             }
+        }
+    }
+
+    private async findFailUpload(): Promise<Array<{ ref: string, filename: string }> | undefined> {
+        const snapshotCommand = `agent-browser snapshot`
+        try {
+            const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
+
+            // Find entries containing both .jpg files and Remove Video button refs
+            const jpgRegex = /img "(.*?\.jpg)"/g
+            const removeVideoRegex = /- button "Remove Video" \[ref=([e\d]+)\]/g
+
+            const jpgMatches: RegExpExecArray[] = []
+            let jpgMatch: RegExpExecArray | null
+            while ((jpgMatch = jpgRegex.exec(snapshotOutput)) !== null) {
+                jpgMatches.push(jpgMatch)
+            }
+
+            const removeVideoRefs: RegExpExecArray[] = []
+            let rvMatch: RegExpExecArray | null
+            while ((rvMatch = removeVideoRegex.exec(snapshotOutput)) !== null) {
+                removeVideoRefs.push(rvMatch)
+            }
+
+            if (jpgMatches.length > 0 && removeVideoRefs.length > 0) {
+                // Pair each .jpg file with its corresponding Remove Video button ref
+                const results = jpgMatches.map((jpgMatch, index) => ({
+                    ref: removeVideoRefs[index]?.[1] || '',
+                    filename: jpgMatch[1]
+                })).filter(item => item.ref !== '')
+
+                return results.length > 0 ? results : undefined
+            }
+
+            return undefined
+        } catch (error) {
+            console.error(red('Error finding failed uploads:', error))
         }
     }
 
@@ -377,7 +423,7 @@ class FacebookMediaUploader {
     }
 
     private async getRef(linkText: string, options: GetRefOptions = {}) {
-        const { key = 'link', second = 10 } = options;
+        const { key = 'link', second = 10 } = options
         // Looking at the selected code, I need to implement a retry mechanism that tries 20 times with 100ms waits between attempts to find the "Add photos or videos" link.Here's the rewritten code:
 
         // Try for the specified number of seconds with 100ms wait between attempts
