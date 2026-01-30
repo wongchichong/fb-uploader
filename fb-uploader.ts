@@ -103,11 +103,11 @@ class FacebookMediaUploader {
         console.log(magenta`Check for fail upload...`)
         const failedUploads = await this.findFailUpload()
         if (failedUploads) {
+            console.log(yellow`Collected ${failedUploads.length} failed uploads:`)
             for (const { ref, filename } of failedUploads) {
-                console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
-                // Remove the failed upload by finding the Remove Video button for this specific file
-                await this.removeFailedUpload(filename)
+                console.log(yellow`  File: ${filename}, Ref: ${ref}`)
             }
+            // Note: Will remove failed uploads in future implementation
             return
         }
     }
@@ -247,6 +247,69 @@ class FacebookMediaUploader {
                 return null
             }
         }
+    }
+
+    /**
+     * Debug helper method to get current browser snapshot
+     * Use this in debug console to inspect browser state
+     */
+    public getBrowserSnapshot(interactive: boolean = false): string {
+        const command = `agent-browser snapshot${interactive ? ' -i' : ''}`;
+        try {
+            return execSync(command, { encoding: 'utf-8' });
+        } catch (error) {
+            console.error('Error getting browser snapshot:', error);
+            return '';
+        }
+    }
+
+    /**
+     * Debug helper to check for specific elements
+     */
+    public findElementsInSnapshot(pattern: string | RegExp): string[] {
+        const snapshot = this.getBrowserSnapshot();
+        if (typeof pattern === 'string') {
+            pattern = new RegExp(pattern, 'g');
+        }
+        const matches = snapshot.match(pattern);
+        return matches || [];
+    }
+
+    /**
+     * Debug helper to check if specific text exists
+     */
+    public checkTextExists(text: string): boolean {
+        const snapshot = this.getBrowserSnapshot();
+        return snapshot.includes(text);
+    }
+
+    /**
+     * Debug helper to inspect current upload state
+     */
+    public inspectUploadState(): void {
+        console.log('=== Browser State Inspection ===');
+        
+        // Get interactive snapshot
+        const interactiveSnapshot = this.getBrowserSnapshot(true);
+        console.log('Interactive Snapshot:', interactiveSnapshot.substring(0, 500) + '...');
+        
+        // Check for upload errors
+        const hasUploadError = this.checkTextExists('Your file can\'t be uploaded:');
+        console.log('Upload Error Present:', hasUploadError);
+        
+        // Find JPG files
+        const jpgFiles = this.findElementsInSnapshot(/img "(.*?\.jpg)"/);
+        console.log('JPG Files Found:', jpgFiles);
+        
+        // Find Remove Video buttons
+        const removeButtons = this.findElementsInSnapshot(/button "Remove Video" \[ref=([e\d]+)\]/);
+        console.log('Remove Video Buttons:', removeButtons);
+        
+        // Find Post buttons
+        const postButtons = this.findElementsInSnapshot(/button "Post" \[ref=([e\d]+)\]/);
+        console.log('Post Buttons:', postButtons);
+        
+        console.log('=== End Inspection ===');
     }
 
     private async findFailUpload(): Promise<Array<{ ref: string, filename: string }> | undefined> {

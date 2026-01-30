@@ -23,12 +23,13 @@
             "internalConsoleOptions": "neverOpen",
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
-            ]
+            ],
+            "stopOnEntry": true
         },
         {
             "type": "node",
             "request": "launch",
-            "name": "Debug Exact Command",
+            "name": "Debug with Agent-Browser Snapshot Inspection",
             "preLaunchTask": "cleanup",
             "skipFiles": [
                 "<node_internals>/**"
@@ -45,12 +46,13 @@
             "internalConsoleOptions": "neverOpen",
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
-            ]
+            ],
+            "stopOnEntry": false
         },
         {
             "type": "node",
             "request": "launch",
-            "name": "Debug with Pre-cleanup",
+            "name": "Debug with Pre-cleanup and Snapshot",
             "preLaunchTask": "cleanup-and-run",
             "skipFiles": [
                 "<node_internals>/**"
@@ -70,7 +72,34 @@
             "internalConsoleOptions": "neverOpen",
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
-            ]
+            ],
+            "stopOnEntry": false
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Debug - Manual Agent-Browser Control",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "runtimeExecutable": "npx",
+            "runtimeArgs": [
+                "tsx"
+            ],
+            "args": [
+                "${workspaceFolder}/fb-uploader.ts",
+                "i:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
+            ],
+            "env": {
+                "TS_NODE_PROJECT": "./tsconfig.json"
+            },
+            "console": "integratedTerminal",
+            "internalConsoleOptions": "neverOpen",
+            "outFiles": [
+                "${workspaceFolder}/**/*.js"
+            ],
+            "stopOnEntry": true,
+            "preLaunchTask": ""
         }
     ]
 }
