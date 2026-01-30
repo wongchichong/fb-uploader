@@ -260,31 +260,36 @@ class FacebookMediaUploader {
                 return undefined
             }
 
-            // Find entries containing both .jpg files and Remove Video button refs
-            const jpgRegex = /img "(.*?\.jpg)"/g
-            const removeVideoRegex = /- button "Remove Video" \[ref=([e\d]+)\]/g
+            // Parse the snapshot to find JPG files and their corresponding Remove Video buttons
+            // Look for the structure: img "filename.jpg" followed by button "Remove Video" [ref=xxx]
+            const results: Array<{ ref: string, filename: string }> = []
 
-            const jpgMatches: RegExpExecArray[] = []
-            let jpgMatch: RegExpExecArray | null
-            while ((jpgMatch = jpgRegex.exec(snapshotOutput)) !== null) {
-                jpgMatches.push(jpgMatch)
+            // Split the snapshot into lines for easier parsing
+            const lines = snapshotOutput.split('\n')
+
+            for (let i = 0; i < lines.length - 1; i++) {
+                const currentLine = lines[i].trim()
+                const nextLine = lines[i + 1].trim()
+
+                // Look for img lines containing .jpg files
+                const imgMatch = currentLine.match(/img "(.*?\.jpg)"/)
+                if (imgMatch) {
+                    const filename = imgMatch[1]
+
+                    // Look for the Remove Video button in the next few lines
+                    for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+                        const buttonLine = lines[j].trim()
+                        const buttonMatch = buttonLine.match(/- button "Remove Video" \[ref=([e\d]+)\]/)
+                        if (buttonMatch) {
+                            const ref = buttonMatch[1]
+                            results.push({ ref, filename })
+                            break
+                        }
+                    }
+                }
             }
 
-            const removeVideoRefs: RegExpExecArray[] = []
-            let rvMatch: RegExpExecArray | null
-            while ((rvMatch = removeVideoRegex.exec(snapshotOutput)) !== null) {
-                removeVideoRefs.push(rvMatch)
-            }
-
-            if (jpgMatches.length > 0 && removeVideoRefs.length > 0) {
-                // Pair each .jpg file with its corresponding Remove Video button ref
-                const results = jpgMatches.map((jpgMatch, index) => ({
-                    ref: removeVideoRefs[index]?.[1] || '',
-                    filename: jpgMatch[1]
-                })).filter(item => item.ref !== '')
-
-                return results.length > 0 ? results : undefined
-            }
+            return results.length > 0 ? results : undefined
 
             return undefined
         } catch (error) {
