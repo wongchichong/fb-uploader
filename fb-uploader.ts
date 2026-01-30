@@ -106,7 +106,7 @@ class FacebookMediaUploader {
             for (const { ref, filename } of failedUploads) {
                 console.log(yellow`Found failed upload - File: ${filename}, Ref: ${ref}`)
                 // Remove the failed upload by finding the Remove Video button for this specific file
-                await this.removeFailedUpload(filename);
+                await this.removeFailedUpload(filename)
             }
             return
         }
@@ -263,24 +263,24 @@ class FacebookMediaUploader {
             // Parse the snapshot to find JPG files and their corresponding Remove Video buttons
             // Look for list items containing both img and Remove Video button
             const results: Array<{ ref: string, filename: string }> = []
-                        
+
             // Split the snapshot into lines for easier parsing
             const lines = snapshotOutput.split('\n')
-                        
+
             // Process each list item separately
             let inListItem = false
-            let currentFilename = '';
-                        
+            let currentFilename = ''
+
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i].trim()
-                            
+
                 // Detect list item start
                 if (line.startsWith('- listitem:')) {
                     inListItem = true
-                    currentFilename = '';
+                    currentFilename = ''
                     continue
                 }
-                            
+
                 // If we're in a list item, look for img and button
                 if (inListItem) {
                     // Look for img lines containing .jpg files
@@ -289,25 +289,25 @@ class FacebookMediaUploader {
                         currentFilename = imgMatch[1]
                         continue
                     }
-                                
+
                     // Look for Remove Video button
                     const buttonMatch = line.match(/- button "Remove Video" \[ref=([e\d]+)\]/)
                     if (buttonMatch && currentFilename) {
                         const ref = buttonMatch[1]
                         results.push({ ref, filename: currentFilename })
-                        inListItem = false; // Reset for next list item
-                        currentFilename = '';
+                        inListItem = false // Reset for next list item
+                        currentFilename = ''
                         continue
                     }
-                                
+
                     // Detect end of list item (next listitem or end of section)
                     if (line.startsWith('- listitem:') || (line === '' && i < lines.length - 1 && lines[i + 1].trim().startsWith('-'))) {
                         inListItem = false
-                        currentFilename = '';
+                        currentFilename = ''
                     }
                 }
             }
-            
+
             return results.length > 0 ? results : undefined
         } catch (error) {
             console.error(red('Error finding failed uploads:', error))
