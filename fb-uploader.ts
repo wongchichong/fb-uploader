@@ -133,15 +133,24 @@ class FacebookMediaUploader {
 
         // Wait for upload to complete
         console.log(green`Waiting for upload to complete...`)
-        await this.waitForPostButton()
+        let postButtonRef = await this.waitForPostButton()
 
-        // Click Post button to finalize batch
-        await this.clickPostButton()
+        try {
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            if (postButtonRef) {
+                // Click Post button to finalize batch
+                await this.isEnabled(postButtonRef)
+                await this.clickPostButton()
+            }
+        }
+        catch (error) {
+            console.error(error)
+        }
 
         console.log(magenta`Wait for 2 minutes`)
 
         //if Post button still there
-        const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
+        postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
         if (postButtonRef && !(await this.isEnabled(postButtonRef)))
             await this.manageFailUploads()
 
@@ -190,17 +199,24 @@ class FacebookMediaUploader {
      */
     private async isEnabled(elementRef: string): Promise<boolean> {
         try {
-            const isEnabledCommand = `agent-browser is enabled ${elementRef}`
-            const isEnabledOutput = execSync(isEnabledCommand, { encoding: 'utf-8' }).trim()
-            return isEnabledOutput === 'true'
+            const snapshotCommand = `agent-browser snapshot -i`
+            const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
+
+            // Look for the button with the specific ref and check if it has [disabled] attribute
+            const disabledRegex = new RegExp(`button "Post"\\s+\\[ref=${elementRef}\\]\\s+\\[disabled\\]`)
+            const match = disabledRegex.test(snapshotOutput)
+
+            // Return false if [disabled] is found (meaning it's disabled)
+            // Return true if [disabled] is not found (meaning it's enabled)
+            return !match
         } catch (error) {
             console.error(red('Error checking if element is enabled:', error))
             return false
         }
     }
 
+    // console.log(magenta`Waiting for Post button to be enabled...`)
     private async waitForPostButton(): Promise<string | null> {
-        // console.log(magenta`Waiting for Post button to be enabled...`)
 
         // Get the Post button reference using getRef
         const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
@@ -209,34 +225,24 @@ class FacebookMediaUploader {
             return null
         }
 
+        console.log(magenta`Checking if Post button is enabled...`)
         // Poll for button to become enabled
-        console.log(magenta`Waiting for Post button to be enabled... `)
-        let checkAttempt = 0
         while (true) {
             try {
                 if (await this.isEnabled(postButtonRef)) {
-                    console.log() // New line after spinner
                     console.log(green`Post button is now enabled`)
                     return postButtonRef
                 }
+                else
+                    await this.manageFailUploads()
+
                 // else {
                 //     console.log(yellow('Post button ', postButtonRef, 'is still not enabled. Waiting...'))
                 // }
 
-                // Add a spinning fan character for each retry attempt
-                const spinner = ['|', '/', '-', '\\']
-                process.stdout.write(spinner[checkAttempt % 4])
-                process.stdout.moveCursor(-1, 0) // Move cursor back to overwrite the previous character
-
                 // Wait a bit before checking again
                 await new Promise(resolve => setTimeout(resolve, 2000))
-
-                checkAttempt++
-                // if (postButtonRef && !(await this.isEnabled(postButtonRef)))
-                //     await this.manageFailUploads()
-
             } catch (error) {
-                console.log() // New line after spinner
                 console.error(red('Error checking if Post button is enabled:', error))
                 return null
             }
