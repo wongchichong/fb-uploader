@@ -1,157 +1,169 @@
-# Facebook Uploader VS Code Debugging Guide
+# Facebook Uploader Debugging Guide
 
-## Debugging Configurations
+## Debugging Setup with VS Code Debugger MCP
 
-The launch.json file has been configured with 4 debugging options:
+This guide explains how to debug `fb-uploader.ts` using the VS Code debugger MCP and agent-browser CLI.
 
-### 1. "Debug Facebook Uploader" 
-- Basic debugging with stop on entry
-- No pre-launch tasks
-- Good for initial debugging
+## Prerequisites
+
+1. VS Code with Debugger for Chrome extension
+2. Node.js with tsx installed
+3. agent-browser CLI tool installed
+4. The VS Code debugger MCP configured in your `mcp.json`
+
+## Debug Configurations
+
+The `.vscode/launch.json` contains several debug configurations:
+
+### 1. "Debug Facebook Uploader - Main Script"
+- **Purpose**: Debug the main fb-uploader.ts script
+- **Features**: 
+  - Stops at entry point (`--inspect-brk`)
+  - Pre-launch cleanup task
+  - Strategic `debugger;` statements for browser state inspection
 
 ### 2. "Debug with Agent-Browser Snapshot Inspection"
-- Runs cleanup task before debugging
-- Automatically executes `agent-browser close`
-- Good for clean debugging sessions
+- **Purpose**: Run without stopping at entry, but with cleanup
+- **Features**: Pre-launch cleanup, continuous execution
 
 ### 3. "Debug with Pre-cleanup and Snapshot"
-- Same as above but with additional environment setup
-- Uses TS_NODE_PROJECT environment variable
+- **Purpose**: Full cleanup and snapshot inspection
+- **Features**: Comprehensive pre-launch cleanup
 
-### 4. "Debug - Manual Agent-Browser Control"
-- Stops on entry point
-- No pre-launch tasks
-- Allows manual agent-browser control during debugging
+## Strategic Debugging Points
 
-## Using Agent-Browser Snapshot for Debugging
+The code includes `debugger;` statements at key locations:
 
-During debugging, you can use these commands in the Debug Console or Terminal:
+1. **Before browser opens** (line ~475): Inspect state before `agent-browser --headed` command
+2. **After browser opens** (line ~487): Inspect initial browser state with snapshot
+3. **Before upload batch** (line ~125): Inspect state before file uploads
+4. **In manageFailUploads** (line ~106): Inspect browser state when checking for failed uploads
 
-### Basic Snapshot Commands:
-```bash
-# Get current browser state
-agent-browser snapshot
+## Debugging Workflow
 
-# Get interactive snapshot (includes element references)
-agent-browser snapshot -i
+### 1. Start Debugging
+1. Open VS Code in the project folder
+2. Go to Run and Debug panel (Ctrl+Shift+D)
+3. Select "Debug Facebook Uploader - Main Script"
+4. Press F5 to start debugging
 
-# Get specific element information
-agent-browser snapshot -i | findstr "ref="
-
-# Check for specific elements
-agent-browser snapshot | findstr "Post"
-agent-browser snapshot | findstr "Remove Video"
-agent-browser snapshot | findstr "\.jpg"
-```
-
-### Debugging Workflow:
-
-1. **Start Debugging**: Select one of the debug configurations above
-2. **Set Breakpoints**: Place breakpoints in fb-uploader.ts where you want to inspect
-3. **Use Debug Console**: When stopped at breakpoints, use these commands:
+### 2. Using Debug Console
+When stopped at a breakpoint, you can use the Debug Console to inspect browser state:
 
 ```javascript
-// In VS Code Debug Console, you can execute:
-execSync('agent-browser snapshot', { encoding: 'utf-8' })
-execSync('agent-browser snapshot -i', { encoding: 'utf-8' })
+// Get current browser snapshot
+uploader.getBrowserSnapshot(true)
 
-// Or create helper functions:
-function getSnapshot() {
-    return execSync('agent-browser snapshot', { encoding: 'utf-8' });
-}
+// Check for specific elements
+uploader.findElementsInSnapshot(/img "(.*?\.jpg)"/)
 
-function getInteractiveSnapshot() {
-    return execSync('agent-browser snapshot -i', { encoding: 'utf-8' });
-}
+// Check for upload errors
+uploader.checkTextExists('Your file can\'t be uploaded:')
 
-// Check specific conditions:
-const snapshot = getSnapshot();
-console.log('Upload error present:', snapshot.includes('Your file can\'t be uploaded:'));
-console.log('Post button refs:', snapshot.match(/button "Post"\s+\[ref=([e\d]+)\]/g));
+// Full inspection
+uploader.inspectUploadState()
 ```
 
-### Key Debugging Points in fb-uploader.ts:
+### 3. Agent-Browser Commands During Debug
+You can also execute agent-browser commands directly in the terminal:
 
-1. **findFailUpload() method** (line ~252):
-   - Set breakpoint to see snapshot parsing
-   - Inspect `snapshotOutput` variable
-   - Check regex matching results
+```bash
+# Get current snapshot
+agent-browser snapshot -i
 
-2. **manageFailUploads() method** (line ~102):
-   - See collected failed uploads
-   - Inspect the `failedUploads` array
+# Check specific elements
+agent-browser snapshot | grep "Remove Video"
 
-3. **getRef() method** (line ~509):
-   - See element reference finding
-   - Inspect regex matching and retries
-
-4. **uploadBatch() method** (line ~118):
-   - Monitor upload process
-   - Check Post button state
-
-### Debugging Tips:
-
-1. **Use the Debug Console**:
-   ```
-   // Check current browser state
-   execSync('agent-browser snapshot -i', { encoding: 'utf-8' })
-   
-   // Check for specific elements
-   const output = execSync('agent-browser snapshot', { encoding: 'utf-8' });
-   console.log('JPG files found:', output.match(/img "(.*?\.jpg)"/g));
-   ```
-
-2. **Watch Variables**:
-   - Add `snapshotOutput` to watch expressions
-   - Monitor `failedUploads` array
-   - Watch `postButtonRef` and other element references
-
-3. **Conditional Breakpoints**:
-   - Set breakpoints that only trigger when specific conditions are met
-   - Example: Break when a specific JPG file is detected
-
-4. **Step Through Code**:
-   - Use Step Over (F10) to execute line by line
-   - Use Step Into (F11) to enter function calls
-   - Use Step Out (Shift+F11) to exit current function
-
-### Common Debugging Scenarios:
-
-**Scenario 1: Checking why failed uploads aren't detected**
-```
-// At findFailUpload breakpoint:
-1. Check snapshotOutput variable content
-2. Execute: execSync('agent-browser snapshot', { encoding: 'utf-8' })
-3. Look for "Your file can't be uploaded:" text
-4. Check if JPG files and Remove Video buttons are properly paired
+# Check for upload errors
+agent-browser snapshot | grep "Your file can't be uploaded"
 ```
 
-**Scenario 2: Verifying element references**
-```
-// At getRef breakpoint:
-1. Check the linkText and key parameters
-2. Execute: execSync('agent-browser snapshot -i', { encoding: 'utf-8' })
-3. Look for the specific element pattern in output
-4. Verify the regex is matching correctly
+## Key Debugging Scenarios
+
+### Scenario 1: Browser State Inspection
+When stopped at the first breakpoint (before browser opens):
+- Check current working directory
+- Verify agent-browser is accessible
+- Confirm profile path is correct
+
+### Scenario 2: Login Status Check
+When stopped after browser opens:
+- Use `uploader.getBrowserSnapshot(true)` to see current page
+- Check if redirected to login page
+- Verify session state
+
+### Scenario 3: Upload Process Monitoring
+During upload batches:
+- Monitor file upload progress
+- Check for error messages
+- Inspect element references
+
+### Scenario 4: Failed Upload Detection
+In `manageFailUploads` method:
+- Check for "Your file can't be uploaded:" text
+- Find JPG files and their corresponding Remove Video buttons
+- Verify list item structure parsing
+
+## Common Debugging Commands
+
+### In Debug Console:
+```javascript
+// Create uploader instance (if needed)
+const uploader = new FacebookMediaUploader({
+    folderPath: "your-folder-path",
+    photoBatchSize: 50,
+    videoBatchSize: 10
+});
+
+// Inspect current state
+uploader.inspectUploadState();
+
+// Get snapshot with interactive mode
+uploader.getBrowserSnapshot(true);
+
+// Check for specific patterns
+uploader.findElementsInSnapshot(/button "Post" \[ref=([e\d]+)\]/);
 ```
 
-**Scenario 3: Monitoring upload process**
-```
-// At uploadBatch breakpoint:
-1. Check batch contents
-2. Monitor Post button state changes
-3. Verify file uploads are progressing
-4. Check for error messages in snapshot
+### In Terminal:
+```bash
+# Manual snapshot inspection
+agent-browser snapshot -i
+
+# Check for specific elements
+agent-browser snapshot | findstr "Remove Video"
+
+# Check for errors
+agent-browser snapshot | findstr "uploaded"
 ```
 
-## Recommended Debugging Flow:
+## Troubleshooting
 
-1. Start with "Debug - Manual Agent-Browser Control" configuration
-2. Set breakpoints in key methods:
-   - findFailUpload()
-   - manageFailUploads() 
-   - getRef()
-   - uploadBatch()
-3. Use Debug Console to execute agent-browser commands
-4. Inspect variables and watch expressions
-5. Step through code to understand execution flow
+### If debugger doesn't stop:
+- Ensure `debugger;` statements are not commented out
+- Check that `--inspect-brk` is in runtimeArgs
+- Verify Node.js version compatibility
+
+### If agent-browser commands fail:
+- Check that agent-browser is in PATH
+- Verify profile directory exists and is writable
+- Ensure no other agent-browser sessions are running
+
+### If breakpoints are not hit:
+- Make sure you're debugging the correct configuration
+- Check that the file path in launch.json matches your workspace
+- Verify tsx is properly installed
+
+## Memory and Performance Tips
+
+- Use `snapshot -i` sparingly as it's interactive
+- For performance monitoring, use non-interactive snapshots
+- Clear breakpoints when not needed to avoid unnecessary stops
+- Use conditional breakpoints for specific scenarios
+
+## Next Steps
+
+1. Start with "Debug Facebook Uploader - Main Script" configuration
+2. Set additional breakpoints as needed in your specific workflow
+3. Use the debug console methods to inspect browser state
+4. Combine VS Code debugging with manual agent-browser commands for comprehensive inspection

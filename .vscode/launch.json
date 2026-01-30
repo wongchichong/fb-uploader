@@ -4,13 +4,14 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Debug Facebook Uploader",
+            "name": "Debug Facebook Uploader - Main Script",
             "skipFiles": [
                 "<node_internals>/**"
             ],
             "runtimeExecutable": "npx",
             "runtimeArgs": [
-                "tsx"
+                "tsx",
+                "--inspect-brk"
             ],
             "args": [
                 "${workspaceFolder}/fb-uploader.ts",
@@ -24,7 +25,8 @@
             "outFiles": [
                 "${workspaceFolder}/**/*.js"
             ],
-            "stopOnEntry": true
+            "stopOnEntry": true,
+            "preLaunchTask": "cleanup"
         },
         {
             "type": "node",
@@ -74,32 +76,6 @@
                 "${workspaceFolder}/**/*.js"
             ],
             "stopOnEntry": false
-        },
-        {
-            "type": "node",
-            "request": "launch",
-            "name": "Debug - Manual Agent-Browser Control",
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "runtimeExecutable": "npx",
-            "runtimeArgs": [
-                "tsx"
-            ],
-            "args": [
-                "${workspaceFolder}/fb-uploader.ts",
-                "i:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
-            ],
-            "env": {
-                "TS_NODE_PROJECT": "./tsconfig.json"
-            },
-            "console": "integratedTerminal",
-            "internalConsoleOptions": "neverOpen",
-            "outFiles": [
-                "${workspaceFolder}/**/*.js"
-            ],
-            "stopOnEntry": true,
-            "preLaunchTask": ""
         }
     ]
 }

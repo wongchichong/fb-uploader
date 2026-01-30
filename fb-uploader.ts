@@ -101,6 +101,10 @@ class FacebookMediaUploader {
 
     async manageFailUploads() {
         console.log(magenta`Check for fail upload...`)
+        
+        // Debug: Inspect current browser state before checking for failures
+        this.inspectUploadState();
+        
         const failedUploads = await this.findFailUpload()
         if (failedUploads) {
             console.log(yellow`Collected ${failedUploads.length} failed uploads:`)
@@ -119,6 +123,9 @@ class FacebookMediaUploader {
         // Convert file paths to forward slashes
         const normalizedPaths = batch.map(file => `"${this.normalizePath(file)}"`)
         const filesString = normalizedPaths.join(' ')
+
+        // DEBUG: Set breakpoint here to inspect browser state before upload
+        debugger;
 
         // console.log(magenta('Waiting for file input...'))
         // this.executeAgentBrowser('agent-browser wait "input[multiple]"')
@@ -465,6 +472,10 @@ class FacebookMediaUploader {
 
         // Open the base URL and check if we're logged in
         console.log(yellow`Checking Facebook login status...`)
+        
+        // DEBUG: Set breakpoint here to inspect browser state before opening
+        debugger;
+        
         const openCommand = `agent-browser --headed --profile "${this.profilePath}" --session ${this.sessionName} open "${this.baseUrl}"`
         console.log(blue`Profile path: `.bold(this.profilePath))
         console.log(blue`Open command: `.bold(openCommand))
@@ -478,7 +489,10 @@ class FacebookMediaUploader {
         await new Promise(resolve => setTimeout(resolve, 5000))
 
         console.log(yellow`Browser opened, checking login status...`)
-
+        
+        // DEBUG: Set breakpoint here to inspect browser state after opening
+        debugger;
+        
         // Take a snapshot to see if we're on the login page or album page
         const snapshotCommand = `agent-browser --session ${this.sessionName} snapshot`
         const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
