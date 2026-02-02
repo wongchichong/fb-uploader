@@ -103,6 +103,8 @@ In `manageFailUploads` method:
 - Check for "Your file can't be uploaded:" text
 - Find JPG files and their corresponding Remove Video buttons
 - Verify list item structure parsing
+- Confirm "Upload failed" text presence beside Remove Video button
+- Ensure both Remove Video button and Upload failed text are detected in same list item
 
 ## Common Debugging Commands
 

@@ -2,7 +2,7 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { execSync, spawn } from 'child_process'
 import * as dotenv from 'dotenv'
-import { bgWhite, black, blue, red, green, yellow, cyan, magenta } from 'chalkee'
+import { bgWhite, black, blue, red, green, yellow, cyan, magenta, gray } from 'chalkee'
 
 // Load environment variables
 dotenv.config()
@@ -28,6 +28,7 @@ class FacebookMediaUploader {
     private sessionName: string
     private baseUrl: string
     private profilePath: string
+    private failedUploads: Array<{ ref: string, filename: string }> = []
 
     constructor(options: UploadOptions) {
         this.folderPath = options.folderPath
@@ -101,18 +102,46 @@ class FacebookMediaUploader {
 
     async manageFailUploads() {
         console.log(magenta`Check for fail upload...`)
-        
-        // Debug: Inspect current browser state before checking for failures
-        this.inspectUploadState();
-        
         const failedUploads = await this.findFailUpload()
         if (failedUploads) {
             console.log(yellow`Collected ${failedUploads.length} failed uploads:`)
             for (const { ref, filename } of failedUploads) {
                 console.log(yellow`  File: ${filename}, Ref: ${ref}`)
+                // Click the ref to remove the media
+                const clickCommand = `agent-browser click ${ref}`
+                this.executeAgentBrowser(clickCommand)
+                console.log(green`Removed failed upload: ${filename}`)
             }
-            // Note: Will remove failed uploads in future implementation
+            // Keep track of all failed uploads
+            this.failedUploads.push(...failedUploads)
             return
+        }
+    }
+
+    /**
+     * Wait with a spinning fan animation
+     */
+    private async waitWithSpinner(durationMs: number, message?: any): Promise<void> {
+        if (message) {
+            process.stdout.write(message.toString())
+        }
+        const spinner = ['|', '/', '-', '—']
+        const interval = 200 // Update every 200ms
+        const iterations = durationMs / interval
+
+        for (let i = 0; i < iterations; i++) {
+            process.stdout.write(spinner[i % 4])
+            process.stdout.moveCursor(-1, 0) // Move cursor back to overwrite the previous character
+            await new Promise(resolve => setTimeout(resolve, interval))
+        }
+
+        // Clear the spinner character
+        process.stdout.write(' ')
+        process.stdout.moveCursor(-1, 0)
+
+        if (message) {
+            // Add a newline after the message
+            console.log()
         }
     }
 
@@ -124,15 +153,11 @@ class FacebookMediaUploader {
         const normalizedPaths = batch.map(file => `"${this.normalizePath(file)}"`)
         const filesString = normalizedPaths.join(' ')
 
-        // DEBUG: Set breakpoint here to inspect browser state before upload
-        debugger;
-
         // console.log(magenta('Waiting for file input...'))
         // this.executeAgentBrowser('agent-browser wait "input[multiple]"')
         await this.getRef('Upload photos or videos', { key: 'button', second: 10 })
         //wait another 10s 
-        console.log(magenta`Waiting 10s for next batch...`)
-        await new Promise(resolve => setTimeout(resolve, 10000))
+        await this.waitWithSpinner(10000, magenta`Waiting 10s for next batch...`)
 
         // Upload command
         const uploadCommand = `agent-browser upload "input[multiple]" ${filesString}`
@@ -143,7 +168,7 @@ class FacebookMediaUploader {
         let postButtonRef = await this.waitForPostButton()
 
         try {
-            await new Promise(resolve => setTimeout(resolve, 2000))
+            await this.waitWithSpinner(2000, magenta`Waiting for upload to complete...`)
             if (postButtonRef) {
                 // Click Post button to finalize batch
                 await this.isEnabled(postButtonRef)
@@ -165,23 +190,23 @@ class FacebookMediaUploader {
         const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
         if (!addPhotosRef) {
             console.log(red`Could not find "Add photos or videos" link, continuing...`)
-            return
-        }
 
-        const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
-        try {
-            this.executeAgentBrowser(clickAddPhotosCommand)
-        } catch (error) {
             console.log(magenta`Reposting`)
             const repostRef = await this.getRef("Post", { key: 'button' })
             if (!repostRef) {
                 console.log(red`Could not find Post button for reposting`)
-                throw error
+
+                // - heading "Sorry, this content isn't available at this time" [ref=e12] [level=2]
+                // agent-browser back
+                return //continue next batch
+
+                //throw new Error("Post button not found for reposting")
             }
+
             const repostCommand = `agent-browser click ${repostRef}`
             this.executeAgentBrowser(repostCommand)
 
-            const oops = await this.getRef("Oops!", { key: 'heading', second: 10 })
+            const oops = await this.getRef("Oops!", { key: 'heading', second: 60 })
 
             if (oops) {
                 console.log(magenta`Refresh Oops`)
@@ -190,9 +215,15 @@ class FacebookMediaUploader {
                 return
             }
             else
-                console.error(red('Error clicking "Add photos or videos":', error))
+                console.error(red('Error clicking "Add photos or videos"'))
+
+            return
         }
-        await new Promise(resolve => setTimeout(resolve, 2000))
+        else {
+            const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
+            this.executeAgentBrowser(clickAddPhotosCommand)
+        }
+        await this.waitWithSpinner(2000, magenta`Waiting for click effect...`)
 
         // console.log(blue(`Waiting for Creating album...`))
         // await new Promise(resolve => setTimeout(resolve, 10000))
@@ -248,75 +279,12 @@ class FacebookMediaUploader {
                 // }
 
                 // Wait a bit before checking again
-                await new Promise(resolve => setTimeout(resolve, 2000))
+                await this.waitWithSpinner(2000, magenta`Waiting before checking button status...`)
             } catch (error) {
                 console.error(red('Error checking if Post button is enabled:', error))
                 return null
             }
         }
-    }
-
-    /**
-     * Debug helper method to get current browser snapshot
-     * Use this in debug console to inspect browser state
-     */
-    public getBrowserSnapshot(interactive: boolean = false): string {
-        const command = `agent-browser snapshot${interactive ? ' -i' : ''}`;
-        try {
-            return execSync(command, { encoding: 'utf-8' });
-        } catch (error) {
-            console.error('Error getting browser snapshot:', error);
-            return '';
-        }
-    }
-
-    /**
-     * Debug helper to check for specific elements
-     */
-    public findElementsInSnapshot(pattern: string | RegExp): string[] {
-        const snapshot = this.getBrowserSnapshot();
-        if (typeof pattern === 'string') {
-            pattern = new RegExp(pattern, 'g');
-        }
-        const matches = snapshot.match(pattern);
-        return matches || [];
-    }
-
-    /**
-     * Debug helper to check if specific text exists
-     */
-    public checkTextExists(text: string): boolean {
-        const snapshot = this.getBrowserSnapshot();
-        return snapshot.includes(text);
-    }
-
-    /**
-     * Debug helper to inspect current upload state
-     */
-    public inspectUploadState(): void {
-        console.log('=== Browser State Inspection ===');
-        
-        // Get interactive snapshot
-        const interactiveSnapshot = this.getBrowserSnapshot(true);
-        console.log('Interactive Snapshot:', interactiveSnapshot.substring(0, 500) + '...');
-        
-        // Check for upload errors
-        const hasUploadError = this.checkTextExists('Your file can\'t be uploaded:');
-        console.log('Upload Error Present:', hasUploadError);
-        
-        // Find JPG files
-        const jpgFiles = this.findElementsInSnapshot(/img "(.*?\.jpg)"/);
-        console.log('JPG Files Found:', jpgFiles);
-        
-        // Find Remove Video buttons
-        const removeButtons = this.findElementsInSnapshot(/button "Remove Video" \[ref=([e\d]+)\]/);
-        console.log('Remove Video Buttons:', removeButtons);
-        
-        // Find Post buttons
-        const postButtons = this.findElementsInSnapshot(/button "Post" \[ref=([e\d]+)\]/);
-        console.log('Post Buttons:', postButtons);
-        
-        console.log('=== End Inspection ===');
     }
 
     private async findFailUpload(): Promise<Array<{ ref: string, filename: string }> | undefined> {
@@ -329,6 +297,77 @@ class FacebookMediaUploader {
             if (!errorMessageRegex.test(snapshotOutput)) {
                 return undefined
             }
+
+            // Check upload completion status BEFORE parsing list items
+            // Look for "Description (optional)" textboxes to determine upload status
+
+            // Extract all "Description (optional)" textboxes
+            const allDescLines = snapshotOutput.match(/textbox "Description \(optional\)".*?$/gm) || []
+            let hasDescNotDisabled = false
+            let hasDescDisabled = false
+
+            for (const line of allDescLines) {
+                if (line.includes('[disabled]')) {
+                    hasDescDisabled = true
+                } else {
+                    hasDescNotDisabled = true
+                }
+            }
+
+            const tryAgainButtonRegex = /button "Try Again"/
+            const hasTryAgainButton = tryAgainButtonRegex.test(snapshotOutput)
+
+            // Check upload completion status based on requirements:
+            // 1. All descriptions disabled + no "Try Again" = finish with fail upload (proceed to parse)
+            // 2. Any description disabled without "Try Again" = still uploading (return undefined)
+            // 3. Has "Try Again" button = upload finished (proceed to parse)
+
+            // Check if ALL descriptions are disabled
+            let allDescDisabled = true
+            for (const line of allDescLines) {
+                if (!line.includes('[disabled]')) {
+                    allDescDisabled = false
+                    break
+                }
+            }
+
+            // Debug logging
+            console.log(gray`Upload completion check:`)
+            console.log(gray`  hasTryAgainButton: ${hasTryAgainButton}`)
+            console.log(gray`  hasDescDisabled: ${hasDescDisabled}`)
+            console.log(gray`  allDescDisabled: ${allDescDisabled}`)
+
+            // Look for the still uploading pattern: disabled description WITHOUT "Upload failed" text AND "Try Again" button
+            let hasUploadingPattern = false
+            if (hasDescDisabled) {
+                // Check if the pattern exists in sequence
+                const snapshotLines = snapshotOutput.split('\n')
+                for (let i = 0; i < snapshotLines.length - 2; i++) {
+                    const currentLine = snapshotLines[i].trim()
+                    const nextLine = snapshotLines[i + 1].trim()
+                    const nextNextLine = snapshotLines[i + 2].trim()
+
+                    // Check for: disabled description WITHOUT "Upload failed" text AND "Try Again" button
+                    // If these are NOT present, it means still uploading
+                    if (currentLine.includes('Description (optional)') && currentLine.includes('[disabled]') &&
+                        !nextLine.includes('text: Upload failed') &&
+                        !nextNextLine.includes('button "Try Again"')) {
+                        hasUploadingPattern = true
+                        break
+                    }
+                }
+            }
+
+            console.log(gray`  hasUploadingPattern: ${hasUploadingPattern}`)
+
+            // Apply the logic according to priority:
+            if (hasUploadingPattern) {
+                // First priority: Still uploading pattern found (no fail files)
+                console.log(gray`  -> First priority: Still uploading pattern found - return undefined`)
+                return undefined
+            }
+            // Default: All descriptions enabled or has fail files - proceed to parse (upload finished)
+            console.log(gray`  -> Default: Has fail files or all enabled - upload finished`)
 
             // Parse the snapshot to find JPG files and their corresponding Remove Video buttons
             // Look for list items containing both img and Remove Video button
@@ -364,7 +403,23 @@ class FacebookMediaUploader {
                     const buttonMatch = line.match(/- button "Remove Video" \[ref=([e\d]+)\]/)
                     if (buttonMatch && currentFilename) {
                         const ref = buttonMatch[1]
-                        results.push({ ref, filename: currentFilename })
+                        // Check for "Upload failed" text in the same list item
+                        let hasUploadFailed = false
+                        // Look ahead in the same list item for "Upload failed" text
+                        for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+                            const nextLine = lines[j].trim()
+                            // Stop if we hit another list item
+                            if (nextLine.startsWith('- listitem:')) break
+                            // Check for "Upload failed" text
+                            if (nextLine.includes('text: Upload failed')) {
+                                hasUploadFailed = true
+                                break
+                            }
+                        }
+
+                        if (hasUploadFailed) {
+                            results.push({ ref, filename: currentFilename })
+                        }
                         inListItem = false // Reset for next list item
                         currentFilename = ''
                         continue
@@ -378,6 +433,9 @@ class FacebookMediaUploader {
                 }
             }
 
+            // Upload is finished (either successful or failed)
+
+            //console.log(gray(snapshotOutput))
             return results.length > 0 ? results : undefined
         } catch (error) {
             console.error(red('Error finding failed uploads:', error))
@@ -435,6 +493,17 @@ class FacebookMediaUploader {
     /**
      * Main upload process
      */
+    public listAllFailedUploads(): void {
+        if (this.failedUploads.length > 0) {
+            console.log(yellow`All failed uploads across all batches:`)
+            for (const { ref, filename } of this.failedUploads) {
+                console.log(yellow`  File: ${filename}, Ref: ${ref}`)
+            }
+        } else {
+            console.log(green`No failed uploads detected across all batches`)
+        }
+    }
+
     public async uploadMedia(albumName: string): Promise<void> {
         console.log(blue`Starting upload process for folder: `.bold(this.folderPath))
 
@@ -472,10 +541,6 @@ class FacebookMediaUploader {
 
         // Open the base URL and check if we're logged in
         console.log(yellow`Checking Facebook login status...`)
-        
-        // DEBUG: Set breakpoint here to inspect browser state before opening
-        debugger;
-        
         const openCommand = `agent-browser --headed --profile "${this.profilePath}" --session ${this.sessionName} open "${this.baseUrl}"`
         console.log(blue`Profile path: `.bold(this.profilePath))
         console.log(blue`Open command: `.bold(openCommand))
@@ -486,13 +551,10 @@ class FacebookMediaUploader {
             }
         })
         // Wait for the browser to open
-        await new Promise(resolve => setTimeout(resolve, 5000))
+        await this.waitWithSpinner(5000, yellow`Waiting for browser to open...`)
 
         console.log(yellow`Browser opened, checking login status...`)
-        
-        // DEBUG: Set breakpoint here to inspect browser state after opening
-        debugger;
-        
+
         // Take a snapshot to see if we're on the login page or album page
         const snapshotCommand = `agent-browser --session ${this.sessionName} snapshot`
         const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
@@ -542,7 +604,7 @@ class FacebookMediaUploader {
         console.log(blue`Click Post button `.bold(pbCommand))
         this.executeAgentBrowser(pbCommand)
 
-        const addPhotosRef = await this.getRef("Add photos or videos")
+        const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 10 })
         if (!addPhotosRef) {
             throw new Error('Could not find "Add photos or videos" link')
         }
@@ -551,7 +613,7 @@ class FacebookMediaUploader {
 
         console.log(blue`Waiting for Creating album...`)
         // await new Promise(resolve => setTimeout(resolve, 10000))
-        await this.getRef("Add photos or videos", { key: 'link', second: 10 })
+        //await this.getRef("Add photos or videos", { key: 'link', second: 10 })
 
 
         // Process photo batches first

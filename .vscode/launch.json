@@ -2,80 +2,123 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Debug Facebook Uploader - Main Script",
             "type": "node",
             "request": "launch",
-            "name": "Debug Facebook Uploader - Main Script",
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
+            "program": "${workspaceFolder}\\fb-uploader.ts",
             "runtimeExecutable": "npx",
             "runtimeArgs": [
                 "tsx",
-                "--inspect-brk"
+                "--inspect=${port}"
             ],
             "args": [
-                "${workspaceFolder}/fb-uploader.ts",
-                "i:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
+                "I:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
             ],
+            "cwd": "${workspaceFolder}",
             "env": {
-                "TS_NODE_PROJECT": "./tsconfig.json"
+                "NODE_ENV": "development"
             },
             "console": "integratedTerminal",
-            "internalConsoleOptions": "neverOpen",
-            "outFiles": [
-                "${workspaceFolder}/**/*.js"
-            ],
-            "stopOnEntry": true,
-            "preLaunchTask": "cleanup"
-        },
-        {
-            "type": "node",
-            "request": "launch",
-            "name": "Debug with Agent-Browser Snapshot Inspection",
             "preLaunchTask": "cleanup",
+            "stopOnEntry": false,
+            "internalConsoleOptions": "openOnSessionStart",
             "skipFiles": [
                 "<node_internals>/**"
-            ],
-            "runtimeExecutable": "npx",
-            "runtimeArgs": [
-                "tsx"
-            ],
-            "args": [
-                "${workspaceFolder}/fb-uploader.ts",
-                "i:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
-            ],
-            "console": "integratedTerminal",
-            "internalConsoleOptions": "neverOpen",
-            "outFiles": [
-                "${workspaceFolder}/**/*.js"
-            ],
-            "stopOnEntry": false
+            ]
         },
         {
+            "name": "Debug Facebook Uploader - Custom Path",
             "type": "node",
             "request": "launch",
-            "name": "Debug with Pre-cleanup and Snapshot",
-            "preLaunchTask": "cleanup-and-run",
+            "program": "${workspaceFolder}\\fb-uploader.ts",
+            "runtimeExecutable": "npx",
+            "runtimeArgs": [
+                "tsx",
+                "--inspect=${port}"
+            ],
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "console": "integratedTerminal",
+            "preLaunchTask": "cleanup",
+            "stopOnEntry": false,
+            "internalConsoleOptions": "openOnSessionStart",
             "skipFiles": [
                 "<node_internals>/**"
-            ],
+            ]
+        },
+        {
+            "name": "Debug with Agent-Browser Snapshot Inspection",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}\\fb-uploader.ts",
             "runtimeExecutable": "npx",
             "runtimeArgs": [
                 "tsx"
             ],
             "args": [
-                "${workspaceFolder}/fb-uploader.ts",
-                "i:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
+                "I:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
             ],
+            "cwd": "${workspaceFolder}",
             "env": {
-                "TS_NODE_PROJECT": "./tsconfig.json"
+                "NODE_ENV": "development"
             },
             "console": "integratedTerminal",
-            "internalConsoleOptions": "neverOpen",
-            "outFiles": [
-                "${workspaceFolder}/**/*.js"
+            "preLaunchTask": "cleanup",
+            "internalConsoleOptions": "openOnSessionStart",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "name": "Debug with Pre-cleanup and Snapshot",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}\\fb-uploader.ts",
+            "runtimeExecutable": "npx",
+            "runtimeArgs": [
+                "tsx",
+                "--inspect=${port}"
             ],
-            "stopOnEntry": false
+            "args": [
+                "I:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "console": "integratedTerminal",
+            "preLaunchTask": "cleanup-and-run",
+            "stopOnEntry": false,
+            "internalConsoleOptions": "openOnSessionStart",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
+        },
+        {
+            "name": "Run Without Debugging",
+            "type": "node",
+            "request": "launch",
+            "program": "${workspaceFolder}\\fb-uploader.ts",
+            "runtimeExecutable": "npx",
+            "runtimeArgs": [
+                "tsx"
+            ],
+            "args": [
+                "I:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11"
+            ],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "NODE_ENV": "development"
+            },
+            "console": "integratedTerminal",
+            "preLaunchTask": "cleanup",
+            "internalConsoleOptions": "openOnSessionStart",
+            "skipFiles": [
+                "<node_internals>/**"
+            ]
         }
     ]
 }
