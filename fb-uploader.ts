@@ -17,18 +17,21 @@ interface UploadOptions {
 }
 
 interface GetRefOptions {
-    key?: 'link' | 'textbox' | 'dialog' | 'heading' | 'button'
+    key?: 'link' | 'textbox' | 'dialog' | 'heading' | 'button' | 'img'  // Added 'img' option
     second?: number
+    matchMode?: 'full' | 'partial'  // 'partial' matches anywhere in the text (default), 'full' matches exact text
 }
 
-class FacebookMediaUploader {
+export class FacebookMediaUploader {
     private folderPath: string
     private photoBatchSize: number
     private videoBatchSize: number
-    private sessionName: string
     private baseUrl: string
     private profilePath: string
-    private failedUploads: Array<{ ref: string, filename: string }> = []
+    private sessionName: string
+    private failedUploads: string[] = []  // Store only unique filenames
+    private photoBatches: string[][] = []
+    private videoBatches: string[][] = []
 
     constructor(options: UploadOptions) {
         this.folderPath = options.folderPath
@@ -91,8 +94,8 @@ class FacebookMediaUploader {
         try {
             // Ensure the command uses the profile if it's a session command
             const profileCommand = command
-            console.log(blue`Executing: `.bold(profileCommand))
             const result = execSync(profileCommand, { stdio: 'inherit' })
+            console.log(blue`Executing: `.bold(profileCommand))
             console.log(green`Command executed successfully`)
         } catch (error) {
             console.error(red(error))
@@ -100,22 +103,33 @@ class FacebookMediaUploader {
         }
     }
 
-    async manageFailUploads() {
-        console.log(magenta`Check for fail upload...`)
+    async manageFailUploads(log = true): Promise<number> {
+        if (log) console.log(magenta`Check for fail upload...`)
         const failedUploads = await this.findFailUpload()
         if (failedUploads) {
             console.log(yellow`Collected ${failedUploads.length} failed uploads:`)
-            for (const { ref, filename } of failedUploads) {
-                console.log(yellow`  File: ${filename}, Ref: ${ref}`)
-                // Click the ref to remove the media
-                const clickCommand = `agent-browser click ${ref}`
-                this.executeAgentBrowser(clickCommand)
-                console.log(green`Removed failed upload: ${filename}`)
+            for (const { filename } of failedUploads) {
+                console.log(yellow`  File: ${filename}`)
+                // Find the ref for this filename from current snapshot
+                const ref = await this.getRef(filename, { key: 'img', second: 5 })
+                if (ref) {
+                    // Click the ref to remove the media
+                    const clickCommand = `agent-browser click ${ref}`
+                    this.executeAgentBrowser(clickCommand)
+                    console.log(green`Removed failed upload: ${filename}`)
+                } else {
+                    console.log(red`  Could not find ref for ${filename}`)
+                }
             }
-            // Keep track of all failed uploads
-            this.failedUploads.push(...failedUploads)
-            return
+            // Keep track of all failed uploads (only unique filenames)
+            for (const failedUpload of failedUploads) {
+                if (!this.failedUploads.includes(failedUpload.filename)) {
+                    this.failedUploads.push(failedUpload.filename)
+                }
+            }
+            return failedUploads.length // Return the count of failed uploads
         }
+        return 0 // Return 0 if no failed uploads
     }
 
     /**
@@ -148,7 +162,16 @@ class FacebookMediaUploader {
     /**
      * Upload a batch of files
      */
-    private async uploadBatch(batch: string[]): Promise<void> {
+    private async uploadBatch(batch: string[], batchNo: number, type: 'photo' | 'video', albumName: string): Promise<boolean> {
+        await this.clickOnAlbum(albumName)
+
+        let addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 1 })
+        if (!addPhotosRef) {
+            throw new Error('Could not find "Add photos or videos" link')
+        }
+        this.click(addPhotosRef, 'Add photos or videos')
+
+
         // Convert file paths to forward slashes
         const normalizedPaths = batch.map(file => `"${this.normalizePath(file)}"`)
         const filesString = normalizedPaths.join(' ')
@@ -157,37 +180,31 @@ class FacebookMediaUploader {
         // this.executeAgentBrowser('agent-browser wait "input[multiple]"')
         await this.getRef('Upload photos or videos', { key: 'button', second: 10 })
         //wait another 10s 
-        await this.waitWithSpinner(10000, magenta`Waiting 10s for next batch...`)
+        // await this.waitWithSpinner(10000, magenta`Waiting 10s for next batch...`)
 
         // Upload command
         const uploadCommand = `agent-browser upload "input[multiple]" ${filesString}`
-        this.executeAgentBrowser(uploadCommand)
+        await this.executeUploadWithRetry(uploadCommand, 3)
 
         // Wait for upload to complete
         console.log(green`Waiting for upload to complete...`)
-        let postButtonRef = await this.waitForPostButton()
+        const { postButtonRef, failUploadCount } = await this.waitForPostButton()
 
         try {
-            await this.waitWithSpinner(2000, magenta`Waiting for upload to complete...`)
+            //await this.waitWithSpinner(2000, magenta`Waiting for upload to complete...`)
             if (postButtonRef) {
                 // Click Post button to finalize batch
                 await this.isEnabled(postButtonRef)
-                await this.clickPostButton()
+                console.log(magenta`Waiting for upload to complete...`)
+                this.click(postButtonRef, 'Post button')
+                this.waitAddPhotos()
             }
         }
         catch (error) {
-            console.error(error)
+            //console.error(error)
         }
 
-        console.log(magenta`Wait for 2 minutes`)
-
-        //if Post button still there
-        postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
-        if (postButtonRef && !(await this.isEnabled(postButtonRef)))
-            await this.manageFailUploads()
-
-
-        const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 120 })
+        addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 1 })
         if (!addPhotosRef) {
             console.log(red`Could not find "Add photos or videos" link, continuing...`)
 
@@ -196,40 +213,141 @@ class FacebookMediaUploader {
             if (!repostRef) {
                 console.log(red`Could not find Post button for reposting`)
 
-                // - heading "Sorry, this content isn't available at this time" [ref=e12] [level=2]
-                // agent-browser back
-                return //continue next batch
+                // Check for content unavailable error
+                const snapshotCommand = `agent-browser snapshot`
+                const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
+
+                if (snapshotOutput.includes('Sorry, this content isn\'t available at this time')) {
+                    console.log(yellow`Detected content unavailable error`)
+                    console.log(magenta`Executing agent-browser back and reload...`)
+
+                    // Execute agent-browser back
+                    this.executeAgentBrowser('agent-browser back')
+
+                    // Execute agent-browser reload
+                    this.executeAgentBrowser('agent-browser reload')
+
+                    console.log(green`Continuing to next batch...`)
+                }
+                else {
+                    // check agent-browser snapshot,
+                    // if last line:
+                    //         - listitem
+                    //         - listitem
+                    //   - status "Loading..."
+                    //   - text: Posting
+                    //assume this batch is ok
+                    // Execute agent-browser reload
+                    const snapshotCommand = `agent-browser snapshot`
+                    const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
+
+                    // Split the output into lines
+                    const lines = snapshotOutput.trim().split('\n')
+
+                    // Check for the specific pattern in the last few lines
+                    if (lines.length >= 4) {
+                        const lastFourLines = lines.slice(-4)
+                        const lastLine = lastFourLines[lastFourLines.length - 1].trim()
+                        const secondLastLine = lastFourLines[lastFourLines.length - 2].trim()
+                        const thirdLastLine = lastFourLines[lastFourLines.length - 3].trim()
+                        const fourthLastLine = lastFourLines[lastFourLines.length - 4].trim()
+
+                        // Check if the pattern matches: listitem, listitem, status "Loading...", text: Posting
+                        if (lastLine.includes('text: Posting') &&
+                            thirdLastLine.includes('status "Loading..."') &&
+                            secondLastLine.includes('- listitem') &&
+                            fourthLastLine.includes('- listitem')) {
+
+                            this.executeAgentBrowser('agent-browser reload')
+                            console.log(green`Assume this batch is OK, Continuing to next batch...`)
+                        } else {
+                            console.log(yellow`Pattern does not match, proceeding with reload...`)
+                            this.executeAgentBrowser('agent-browser reload')
+                            console.log(green`Reloaded, Continuing to next batch...`)
+                        }
+                    } else {
+                        console.log(yellow`Snapshot has fewer than 4 lines, reloading...`)
+                        this.executeAgentBrowser('agent-browser reload')
+                        console.log(green`Reloaded, Continuing to next batch...`)
+                    }
+                }
+
+
+                //return //continue next batch
 
                 //throw new Error("Post button not found for reposting")
             }
 
-            const repostCommand = `agent-browser click ${repostRef}`
-            this.executeAgentBrowser(repostCommand)
+            if (repostRef && await this.isEnabled(repostRef)) {
+                this.click(repostRef, 'Repost')
 
-            const oops = await this.getRef("Oops!", { key: 'heading', second: 60 })
+                const oops = await this.getRef("Oops!", { key: 'heading', second: 60 })
 
-            if (oops) {
-                console.log(magenta`Refresh Oops`)
+                if (oops) {
+                    console.log(magenta`Refresh Oops`)
+                    this.executeAgentBrowser('agent-browser reload')
+                    console.log(green`Assuming post succeeded`)
+                    //return
+                }
+            }
+            else {
+                console.log(magenta`Posting hang...`)
                 this.executeAgentBrowser('agent-browser reload')
                 console.log(green`Assuming post succeeded`)
-                return
+                //return
             }
-            else
-                console.error(red('Error clicking "Add photos or videos"'))
 
-            return
         }
-        else {
-            const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
-            this.executeAgentBrowser(clickAddPhotosCommand)
+
+
+        //this.waitAddPhotos()
+
+        //restart
+        this.gotoAlbum()
+
+        const success = this.compareAlbumCounts(albumName, batchNo, type)
+
+        // this.clickOnAlbum(albumName)
+
+        // console.error(red('Error clicking "Add photos or videos"'))
+
+        return success
+
+    }
+
+    private waitAddPhotos() {
+        console.log(magenta`Wait for Add photos or videos (max 2 minutes)`)
+        const result = execSync(`agent-browser wait "text='Add photos or videos'"`)
+        //console.log(result)
+    }
+
+    /**
+     * Execute upload command with retry logic
+     */
+    private async executeUploadWithRetry(uploadCommand: string, maxRetries = 3): Promise<void> {
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(magenta`Upload attempt ${attempt}/${maxRetries}`)
+                this.executeAgentBrowser(uploadCommand)
+                return // Success, exit the retry loop
+            } catch (error) {
+                console.error(red(`Upload attempt ${attempt} failed:`), error)
+
+                if (attempt < maxRetries) {
+                    console.log(magenta`Retrying... Executing agent-browser back and reload...`)
+
+                    // Execute agent-browser back
+                    this.executeAgentBrowser('agent-browser back')
+
+                    // Execute agent-browser reload
+                    this.executeAgentBrowser('agent-browser reload')
+                } else {
+                    console.log(red`All ${maxRetries} upload attempts failed.`)
+                    throw error // Re-throw the error after all retries are exhausted
+                }
+            }
         }
-        await this.waitWithSpinner(2000, magenta`Waiting for click effect...`)
-
-        // console.log(blue(`Waiting for Creating album...`))
-        // await new Promise(resolve => setTimeout(resolve, 10000))
-        // await this.getRef("Add photos or videos", 'link', 10)
-
-        return //successs
     }
 
     /**
@@ -254,32 +372,33 @@ class FacebookMediaUploader {
     }
 
     // console.log(magenta`Waiting for Post button to be enabled...`)
-    private async waitForPostButton(): Promise<string | null> {
+    private async waitForPostButton(): Promise<{ postButtonRef: string | null, failUploadCount: number }> {
 
         // Get the Post button reference using getRef
         const postButtonRef = await this.getRef("Post", { key: 'button', second: 10 })
         if (!postButtonRef) {
             console.log(red`Could not find Post button`)
-            return null
+            return { postButtonRef: null, failUploadCount: 0 }
         }
 
         console.log(magenta`Checking if Post button is enabled...`)
         // Poll for button to become enabled
+        let failUploadCount = 0
         while (true) {
             try {
                 if (await this.isEnabled(postButtonRef)) {
                     console.log(green`Post button is now enabled`)
-                    return postButtonRef
+                    return { postButtonRef, failUploadCount }
                 }
                 else
-                    await this.manageFailUploads()
+                    failUploadCount = await this.manageFailUploads(false)
 
                 // else {
                 //     console.log(yellow('Post button ', postButtonRef, 'is still not enabled. Waiting...'))
                 // }
 
                 // Wait a bit before checking again
-                await this.waitWithSpinner(2000, magenta`Waiting before checking button status...`)
+                await this.waitWithSpinner(2000, ``)
             } catch (error) {
                 console.error(red('Error checking if Post button is enabled:', error))
                 return null
@@ -287,14 +406,15 @@ class FacebookMediaUploader {
         }
     }
 
-    private async findFailUpload(): Promise<Array<{ ref: string, filename: string }> | undefined> {
+    private async findFailUpload(): Promise<Array<{ filename: string }> | undefined> {
         const snapshotCommand = `agent-browser snapshot`
         try {
             const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
 
             // First check if there's an upload error message
             const errorMessageRegex = /- text: "Your file can't be uploaded:/
-            if (!errorMessageRegex.test(snapshotOutput)) {
+            const errorMessageRegex2 = /- text: "Your files can't be uploaded:/
+            if (!errorMessageRegex.test(snapshotOutput) && !errorMessageRegex2.test(snapshotOutput)) {
                 return undefined
             }
 
@@ -333,9 +453,9 @@ class FacebookMediaUploader {
 
             // Debug logging
             console.log(gray`Upload completion check:`)
-            console.log(gray`  hasTryAgainButton: ${hasTryAgainButton}`)
-            console.log(gray`  hasDescDisabled: ${hasDescDisabled}`)
-            console.log(gray`  allDescDisabled: ${allDescDisabled}`)
+            // console.log(gray`  hasTryAgainButton: ${hasTryAgainButton}`)
+            // console.log(gray`  hasDescDisabled: ${hasDescDisabled}`)
+            // console.log(gray`  allDescDisabled: ${allDescDisabled}`)
 
             // Look for the still uploading pattern: disabled description WITHOUT "Upload failed" text AND "Try Again" button
             let hasUploadingPattern = false
@@ -363,15 +483,15 @@ class FacebookMediaUploader {
             // Apply the logic according to priority:
             if (hasUploadingPattern) {
                 // First priority: Still uploading pattern found (no fail files)
-                console.log(gray`  -> First priority: Still uploading pattern found - return undefined`)
+                // console.log(gray`  -> First priority: Still uploading pattern found - return undefined`)
                 return undefined
             }
             // Default: All descriptions enabled or has fail files - proceed to parse (upload finished)
-            console.log(gray`  -> Default: Has fail files or all enabled - upload finished`)
+            // console.log(gray`  -> Default: Has fail files or all enabled - upload finished`)
 
             // Parse the snapshot to find JPG files and their corresponding Remove Video buttons
             // Look for list items containing both img and Remove Video button
-            const results: Array<{ ref: string, filename: string }> = []
+            const results: { filename: string }[] = []
 
             // Split the snapshot into lines for easier parsing
             const lines = snapshotOutput.split('\n')
@@ -402,7 +522,6 @@ class FacebookMediaUploader {
                     // Look for Remove Video button
                     const buttonMatch = line.match(/- button "Remove Video" \[ref=([e\d]+)\]/)
                     if (buttonMatch && currentFilename) {
-                        const ref = buttonMatch[1]
                         // Check for "Upload failed" text in the same list item
                         let hasUploadFailed = false
                         // Look ahead in the same list item for "Upload failed" text
@@ -418,7 +537,7 @@ class FacebookMediaUploader {
                         }
 
                         if (hasUploadFailed) {
-                            results.push({ ref, filename: currentFilename })
+                            results.push({ filename: currentFilename })
                         }
                         inListItem = false // Reset for next list item
                         currentFilename = ''
@@ -447,8 +566,7 @@ class FacebookMediaUploader {
             // Find the Remove Video button for this specific file
             const removeButtonRef = await this.getRef("Remove Video", { key: 'button', second: 10 })
             if (removeButtonRef) {
-                const clickCommand = `agent-browser click ${removeButtonRef}`
-                this.executeAgentBrowser(clickCommand)
+                this.click(removeButtonRef, `Remove failed upload: ${filename}`)
                 console.log(green`Removed failed upload: ${filename}`)
             }
         } catch (error) {
@@ -467,8 +585,7 @@ class FacebookMediaUploader {
             console.log(red`Could not find Post button`)
             return
         }
-        const clickCommand = `agent-browser click ${postButtonRef}`
-        this.executeAgentBrowser(clickCommand)
+        this.click(postButtonRef, 'Post button')
         console.log(green`Post button clicked successfully`)
     }
 
@@ -493,11 +610,11 @@ class FacebookMediaUploader {
     /**
      * Main upload process
      */
-    public listAllFailedUploads(): void {
+    private listAllFailedUploads(): void {
         if (this.failedUploads.length > 0) {
             console.log(yellow`All failed uploads across all batches:`)
-            for (const { ref, filename } of this.failedUploads) {
-                console.log(yellow`  File: ${filename}, Ref: ${ref}`)
+            for (const filename of this.failedUploads) {
+                console.log(yellow`  File: ${filename}`)
             }
         } else {
             console.log(green`No failed uploads detected across all batches`)
@@ -522,11 +639,11 @@ class FacebookMediaUploader {
         }
 
         // Create batches for photos and videos separately
-        const photoBatches = this.createBatches(photos, this.photoBatchSize)
-        const videoBatches = this.createBatches(videos, this.videoBatchSize)
+        this.photoBatches = this.createBatches(photos, this.photoBatchSize)
+        this.videoBatches = this.createBatches(videos, this.videoBatchSize)
 
-        console.log(yellow`Created ${photoBatches.length} photo batches of ${this.photoBatchSize} files each`)
-        console.log(yellow`Created ${videoBatches.length} video batches of ${this.videoBatchSize} files each`)
+        console.log(yellow`Created ${this.photoBatches.length} photo batches of ${this.photoBatchSize} files each`)
+        console.log(yellow`Created ${this.videoBatches.length} video batches of ${this.videoBatchSize} files each`)
 
         // Close any existing agent-browser sessions to ensure clean state with profile
         // try {
@@ -578,18 +695,101 @@ class FacebookMediaUploader {
             console.log(green`Already logged in to Facebook - session preserved`)
         }
 
-        // Navigate to the main albums page first
+        this.gotoAlbum()
+
+        await this.createAlbum(albumName)
+
+        // await new Promise(resolve => setTimeout(resolve, 10000))
+        //await this.getRef("Add photos or videos", { key: 'link', second: 10 })
+
+
+        // Process photo batches first
+        for (let i = 0; i < this.photoBatches.length; i++) {
+            console.log(cyan`Uploading photo batch ${i + 1}/${this.photoBatches.length} (${this.photoBatches[i].length} files)`)
+
+            let success = await this.uploadBatch(this.photoBatches[i], i, 'photo', albumName)
+            let retryCount = 0
+            const maxRetries = 3
+
+            // Retry failed batches
+            while (!success && retryCount < maxRetries) {
+                retryCount++
+                console.log(yellow`Photo batch ${i + 1} failed, retrying... (Attempt ${retryCount}/${maxRetries})`)
+                await this.waitWithSpinner(5000, yellow`Waiting before retry...`)
+                success = await this.uploadBatch(this.photoBatches[i], i, 'photo', albumName)
+            }
+
+            if (!success) {
+                console.log(red`Photo batch ${i + 1} failed after ${maxRetries} attempts`)
+                throw new Error(`Failed to upload photo batch ${i + 1} after ${maxRetries} retries`)
+            }
+
+            // // Add delay between batches
+            // if (i < this.photoBatches.length - 1) {
+            //     console.log(yellow('Waiting 10 seconds before next batch...'))
+            //     await new Promise(resolve => setTimeout(resolve, 10000))
+            // }
+        }
+
+        // Then process video batches
+        for (let i = 0; i < this.videoBatches.length; i++) {
+            console.log(cyan`Uploading video batch ${i + 1}/${this.videoBatches.length} (${this.videoBatches[i].length} files)`)
+
+            let success = await this.uploadBatch(this.videoBatches[i], i, 'video', albumName)
+            let retryCount = 0
+            const maxRetries = 3
+
+            // Retry failed batches
+            while (!success && retryCount < maxRetries) {
+                retryCount++
+                console.log(yellow`Video batch ${i + 1} failed, retrying... (Attempt ${retryCount}/${maxRetries})`)
+                await this.waitWithSpinner(5000, yellow`Waiting before retry...`)
+                success = await this.uploadBatch(this.videoBatches[i], i, 'video', albumName)
+            }
+
+            if (!success) {
+                console.log(red`Video batch ${i + 1} failed after ${maxRetries} attempts`)
+                throw new Error(`Failed to upload video batch ${i + 1} after ${maxRetries} retries`)
+            }
+
+            // // Add delay between batches
+            // if (i < this.videoBatches.length - 1) {
+            //     console.log(yellow('Waiting 10 seconds before next batch...'))
+            //     await new Promise(resolve => setTimeout(resolve, 10000))
+            // }
+        }
+
+        console.log(green`All batches uploaded successfully!`)
+
+        // List all failed uploads across all batches
+        this.listAllFailedUploads()
+    }
+
+    /**
+     * Navigate to the main albums page first
+     */
+    private gotoAlbum() {
         console.log(blue`Navigating to albums page: `.bold(this.baseUrl))
         const navigateCommand = `agent-browser open "${this.baseUrl}"`
         this.executeAgentBrowser(navigateCommand)
+        this.executeAgentBrowser('agent-browser reload')
+    }
 
+    private async clickOnAlbum(albumName: string) {
+        this.gotoAlbum()
+
+        //click on the album
+        const albumRef = await this.getRef(albumName, { matchMode: 'partial' })
+        this.click(albumRef)
+        this.waitAddPhotos()
+    }
+
+    private async createAlbum(albumName: string) {
         const createAlbumRef = await this.getRef("Create Album")
         if (!createAlbumRef) {
             throw new Error('Could not find "Create Album" button')
         }
-        console.log(blue`Create album `.bold(createAlbumRef))
-        const clickCreateAlbumCommand = `agent-browser click ${createAlbumRef}`
-        this.executeAgentBrowser(clickCreateAlbumCommand)
+        this.click(createAlbumRef, 'Create album')
 
         const albumNameRef = await this.getRef("Album name", { key: 'textbox' })
         if (!albumNameRef) {
@@ -599,54 +799,28 @@ class FacebookMediaUploader {
         console.log(blue`Fill album name `.bold(fillAlbumNameCommand))
         this.executeAgentBrowser(fillAlbumNameCommand)
 
-        const pb = await this.waitForPostButton()
-        const pbCommand = `agent-browser click ${pb}`
-        console.log(blue`Click Post button `.bold(pbCommand))
-        this.executeAgentBrowser(pbCommand)
-
-        const addPhotosRef = await this.getRef("Add photos or videos", { key: 'link', second: 10 })
-        if (!addPhotosRef) {
-            throw new Error('Could not find "Add photos or videos" link')
-        }
-        const clickAddPhotosCommand = `agent-browser click ${addPhotosRef}`
-        this.executeAgentBrowser(clickAddPhotosCommand)
-
-        console.log(blue`Waiting for Creating album...`)
-        // await new Promise(resolve => setTimeout(resolve, 10000))
-        //await this.getRef("Add photos or videos", { key: 'link', second: 10 })
-
-
-        // Process photo batches first
-        for (let i = 0; i < photoBatches.length; i++) {
-            console.log(cyan`Uploading photo batch ${i + 1}/${photoBatches.length} (${photoBatches[i].length} files)`)
-
-            await this.uploadBatch(photoBatches[i])
-
-            // // Add delay between batches
-            // if (i < photoBatches.length - 1) {
-            //     console.log(yellow('Waiting 10 seconds before next batch...'))
-            //     await new Promise(resolve => setTimeout(resolve, 10000))
-            // }
-        }
-
-        // Then process video batches
-        for (let i = 0; i < videoBatches.length; i++) {
-            console.log(cyan`Uploading video batch ${i + 1}/${videoBatches.length} (${videoBatches[i].length} files)`)
-
-            await this.uploadBatch(videoBatches[i])
-
-            // // Add delay between batches
-            // if (i < videoBatches.length - 1) {
-            //     console.log(yellow('Waiting 10 seconds before next batch...'))
-            //     await new Promise(resolve => setTimeout(resolve, 10000))
-            // }
-        }
-
-        console.log(green`All batches uploaded successfully!`)
+        const { postButtonRef: pb, failUploadCount } = await this.waitForPostButton()
+        this.click(pb, 'Click Post button')
+        this.waitAddPhotos()
     }
 
+    /**
+     * Helper method to click on an element with optional message
+     */
+    private click(ref: string | null, message?: string): void {
+        if (ref) {
+            if (message) {
+                console.log(blue`${message} `.bold(ref))
+            }
+            this.executeAgentBrowser(`agent-browser click ${ref}`)
+        }
+    }
+
+    /**
+     * Navigate to album page
+     */
     private async getRef(linkText: string, options: GetRefOptions = {}): Promise<string | null> {
-        const { key = 'link', second = 10 } = options
+        const { key = 'link', second = 10, matchMode = 'partial' } = options
         // Looking at the selected code, I need to implement a retry mechanism that tries 20 times with 100ms waits between attempts to find the "Add photos or videos" link.Here's the rewritten code:
 
         // Try for the specified number of seconds with 100ms wait between attempts
@@ -659,12 +833,22 @@ class FacebookMediaUploader {
             await new Promise(resolve => setTimeout(resolve, 200))
 
             // Click "Add photos or videos"
-            const addPhotosSnapshot = `agent-browser snapshot` + (key !== 'heading' ? ' -i' : '')
+            const addPhotosSnapshot = `agent-browser snapshot` + (key !== 'heading' && key !== 'img' ? ' -i' : '')
             const addPhotosOutput = execSync(addPhotosSnapshot, { encoding: 'utf-8' })
 
-            const addPhotosMatch = addPhotosOutput.match(new RegExp(`${key} "${linkText}"\\s+\\[ref=([e\\d]+)\\]`))
+            let regexPattern: string
+            if (matchMode === 'full') {
+                // For full match, match the exact text
+                regexPattern = `${key} "${linkText}"[^\\[]*\\[ref=([e\\d]+)\\]`
+            } else {
+                // For partial match, match text that contains the linkText anywhere
+                regexPattern = `${key} "([^"]*${linkText}[^"]*)"[^\\[]*\\[ref=([e\\d]+)\\]`
+            }
+
+            const addPhotosMatch = addPhotosOutput.match(new RegExp(regexPattern))
             if (addPhotosMatch) {
-                const addPhotosRef = addPhotosMatch[1]
+                // For full match, ref is in group [1], for partial match, ref is in group [2]
+                const addPhotosRef = matchMode === 'full' ? addPhotosMatch[1] : addPhotosMatch[2]
                 console.log() // New line after dots
                 return addPhotosRef
             }
@@ -682,6 +866,118 @@ class FacebookMediaUploader {
 
         console.log(red`Could not find "${linkText}" ${key} after ${second} seconds`)
         return null
+    }
+
+    /**
+     * Parse album information from snapshot output
+     */
+    private parseAlbumInfo(albumName: string): { photos: number, videos: number, total: number, ref: string } | null {
+        const snapshotCommand = `agent-browser snapshot`
+        const snapshotOutput = execSync(snapshotCommand, { encoding: 'utf-8' })
+
+        const lines = snapshotOutput.split('\n')
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim()
+
+            // Look for the link line containing the album name
+            if (line.includes(`link "${albumName}`) && line.includes('[ref=')) {
+                // Extract ref
+                const refMatch = line.match(/\[ref=([e\d]+)\]/)
+                if (!refMatch) continue
+
+                const ref = refMatch[1]
+
+                // Look for the text line 3 lines below (based on the sample structure)
+                const textLineIndex = i + 3
+                if (textLineIndex >= lines.length) continue
+
+                const textLine = lines[textLineIndex].trim()
+                if (!textLine.includes('text:')) continue
+
+                // Parse counts from text like "20180620 Family trip China Day 11 50 photos"
+                // or "20180619 Family trip China Day 10 357 photos 9 videos"
+                const textContent = textLine.replace('text:', '').trim()
+
+                // Extract numbers from the end of the text
+                const numbers = textContent.match(/(\d+)\s+photos(?:\s+(\d+)\s+videos)?/)
+                if (!numbers) continue
+
+                const photos = parseInt(numbers[1], 10)
+                const videos = numbers[2] ? parseInt(numbers[2], 10) : 0
+                const total = photos + videos
+
+                return {
+                    photos,
+                    videos,
+                    total,
+                    ref
+                }
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Compare album counts with expected batch information
+     */
+    private compareAlbumCounts(albumName: string, batchNo: number, type: 'photo' | 'video'): boolean {
+        const albumInfo = this.parseAlbumInfo(albumName)
+        if (albumInfo) {
+            const { photos, videos, total, ref } = albumInfo
+
+            // Calculate cumulative expected counts based on batch type
+            // For photo batches: count photo batches up to the current batchNo (inclusive)
+            // For video batches: count all photo batches + video batches up to the current batchNo (inclusive)
+            let expectedPhotos = 0
+            let expectedVideos = 0
+
+            if (type === 'photo') {
+                // Count photo batches from 0 to batchNo (inclusive)
+                expectedPhotos = this.photoBatches.slice(0, batchNo + 1).reduce((sum, batch) => sum + batch.length, 0)
+                // No video batches processed yet when handling photo batches
+                expectedVideos = 0
+            } else { // type === 'video'
+                // Include all photo batches (they are processed first)
+                expectedPhotos = this.photoBatches.reduce((sum, batch) => sum + batch.length, 0)
+                // Count video batches from 0 to batchNo (inclusive)
+                expectedVideos = this.videoBatches.slice(0, batchNo + 1).reduce((sum, batch) => sum + batch.length, 0)
+            }
+
+            const expectedTotal = expectedPhotos + expectedVideos
+
+            console.log(cyan`Expected up to ${type} batch ${batchNo}: ${expectedPhotos} photos, ${expectedVideos} videos, ${expectedTotal} total`)
+            console.log(cyan`Actual: ${photos} photos, ${videos} videos, ${total} total`)
+
+            // Get the count of failed uploads from the class variable
+            const failedUploadsCount = this.failedUploads.length
+            console.log(cyan`Total failed uploads collected so far: ${failedUploadsCount}`)
+
+            // Adjust the expected count by the total failed uploads
+            const adjustedExpectedPhotos = expectedPhotos - failedUploadsCount
+            const adjustedExpectedTotal = expectedTotal - failedUploadsCount
+
+            console.log(cyan`Adjusted expected (after removing ${failedUploadsCount} total failed uploads): ${adjustedExpectedPhotos} photos, ${expectedVideos} videos, ${adjustedExpectedTotal} total`)
+
+            if (photos === adjustedExpectedPhotos && videos === expectedVideos) {
+                console.log(green`✅ Album counts match expected batch counts (adjusted for failed uploads)!`)
+                //this.click(ref)
+                return true
+            } else {
+                console.log(yellow`⚠️  Album counts don't match expected batch counts`)
+                if (photos !== adjustedExpectedPhotos) {
+                    console.log(red`  Photos mismatch: expected ${adjustedExpectedPhotos}, got ${photos}`)
+                }
+                if (videos !== expectedVideos) {
+                    console.log(red`  Videos mismatch: expected ${expectedVideos}, got ${videos}`)
+                }
+                return false
+            }
+        } else {
+            console.log(red`Could not parse album information`)
+            return false
+        }
     }
 }
 
@@ -776,4 +1072,3 @@ if (require.main === module) {
     main()
 }
 
-export { FacebookMediaUploader, UploadOptions, GetRefOptions }

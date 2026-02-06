@@ -6,7 +6,7 @@
     "scripts": {
         "build": "tsc",
         "start": "node dist/facebook-uploader.js",
-        "dev": "agent-browser close && tsx .\facebook-uploader.ts \"i:\\Photo\\2018\\201806___\\20180610 china 2018\\20180618 Family trip China Day 9\"",
+        "dev": "cls && agent-browser close && tsx .\\fb-uploader.ts \"I:\\Photo\\2018\\201806\\20180610 china 2018\\20180620 Family trip China Day 11\"",
         "run": "tsx facebook-uploader.ts"
     },
     "keywords": [
